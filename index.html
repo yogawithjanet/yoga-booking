@@ -94,6 +94,7 @@
   .modal p{margin:0 0 18px;font-size:13.5px;color:var(--muted);line-height:1.6;white-space:pre-wrap;}
   .modal-actions{display:flex;gap:10px;}
   .modal-actions button{flex:1;padding:12px;border-radius:12px;border:none;font-size:14px;font-weight:700;cursor:pointer;}
+  .modal-actions button:disabled{opacity:.6;cursor:not-allowed;}
   .modal-actions .confirm{background:var(--line-green);color:#fff;}
   .modal-actions .cancel{background:#f2f0ea;color:var(--ink);}
 
@@ -674,7 +675,16 @@ function closeModal(){ overlay.classList.remove('show'); pendingAction=null; }
 cancelBtn.addEventListener('click', closeModal);
 overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
 confirmBtn.addEventListener('click', async ()=>{
-  if(pendingAction) await pendingAction();
+  if(!pendingAction || confirmBtn.disabled) return;
+  confirmBtn.disabled = true;
+  const originalText = confirmBtn.textContent;
+  confirmBtn.textContent = '處理中...';
+  try{
+    await pendingAction();
+  } finally {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = originalText;
+  }
   closeModal();
 });
 
@@ -709,42 +719,55 @@ function openCancelModal(bookingId){
 }
 
 /* ============ 預約 / 取消（實際寫入 Supabase） ============ */
+let isProcessingBooking = false; // 防止手滑連點造成重複預約/取消
+
 async function bookClass(c){
-  const classStart = new Date(c.year, c.month-1, c.day, ...c.time.split(':').map(Number));
-  if(classStart <= new Date()){ showToast('這堂課已經開始，無法預約'); return; }
-  if(state.creditsRemaining<=0){ showToast('堂數不足，請先加購'); return; }
-  if(seatsBooked(c.classKey) >= c.cap){ showToast('此堂課已額滿'); return; }
-  if(state.myBookings.some(b=>b.class_key===c.classKey && b.status==='active')){ showToast('已經預約過這堂課囉'); return; }
+  if(isProcessingBooking){ return; }
+  isProcessingBooking = true;
+  try{
+    const classStart = new Date(c.year, c.month-1, c.day, ...c.time.split(':').map(Number));
+    if(classStart <= new Date()){ showToast('這堂課已經開始，無法預約'); return; }
+    if(state.creditsRemaining<=0){ showToast('堂數不足，請先加購'); return; }
+    if(seatsBooked(c.classKey) >= c.cap){ showToast('此堂課已額滿'); return; }
+    if(state.myBookings.some(b=>b.class_key===c.classKey && b.status==='active')){ showToast('已經預約過這堂課囉'); return; }
 
-  const batchId = await consumeOneCredit(lineProfile.userId);
-  const newRemaining = state.creditsRemaining - 1;
+    const batchId = await consumeOneCredit(lineProfile.userId);
+    const newRemaining = state.creditsRemaining - 1;
 
-  const isoDate = `${c.year}-${String(c.month).padStart(2,'0')}-${String(c.day).padStart(2,'0')}`;
-  const { error: insertErr } = await db.from('bookings').insert({
-    line_user_id: lineProfile.userId,
-    class_key: c.classKey,
-    class_template_id: c.templateId,
-    class_title: c.title,
-    class_date: c.date,
-    class_date_iso: isoDate,
-    class_time: c.time,
-    teacher: c.teacher,
-    cap: c.cap,
-    status: 'active',
-    credit_batch_id: batchId
-  });
-  if(insertErr){
-    showToast('預約失敗，請稍後再試'); console.error(insertErr);
-    if(batchId) await refundOneCredit(lineProfile.userId, batchId); // 預約沒成功，把剛剛扣的批次退回去
-    return;
+    const isoDate = `${c.year}-${String(c.month).padStart(2,'0')}-${String(c.day).padStart(2,'0')}`;
+    const { error: insertErr } = await db.from('bookings').insert({
+      line_user_id: lineProfile.userId,
+      class_key: c.classKey,
+      class_template_id: c.templateId,
+      class_title: c.title,
+      class_date: c.date,
+      class_date_iso: isoDate,
+      class_time: c.time,
+      teacher: c.teacher,
+      cap: c.cap,
+      status: 'active',
+      credit_batch_id: batchId
+    });
+    if(insertErr){
+      if(batchId) await refundOneCredit(lineProfile.userId, batchId); // 預約沒成功，把剛剛扣的批次退回去
+      if(insertErr.code === '23505'){
+        // 資料庫的防重複規則擋下來了（極少數手滑連點的情況）
+        showToast('已經預約過這堂課囉');
+      } else {
+        showToast('預約失敗，請稍後再試'); console.error(insertErr);
+      }
+      return;
+    }
+
+    await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineProfile.userId);
+    state.creditsRemaining = newRemaining;
+
+    await Promise.all([loadSeatsMap(), loadMyBookings()]);
+    render();
+    showToast(`已預約 ${c.date} ${c.time} ${c.title} ✓`);
+  } finally {
+    isProcessingBooking = false;
   }
-
-  await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineProfile.userId);
-  state.creditsRemaining = newRemaining;
-
-  await Promise.all([loadSeatsMap(), loadMyBookings()]);
-  render();
-  showToast(`已預約 ${c.date} ${c.time} ${c.title} ✓`);
 }
 
 async function cancelBooking(bookingId){
