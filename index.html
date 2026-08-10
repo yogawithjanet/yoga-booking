@@ -55,7 +55,12 @@
   .day-title-row{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px 4px;}
   .day-title{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;}
 
-  .class-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .class-card-wrap{margin-bottom:10px;}
+  .class-card{background:var(--card);border:1px solid var(--line);border-radius:14px 14px 0 0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .class-card-wrap:has(.class-desc:not(.open)) .class-card{border-radius:14px;}
+  .info-btn{border:1px solid var(--line);background:var(--paper);color:var(--muted);width:28px;height:28px;border-radius:50%;font-size:13px;cursor:pointer;flex-shrink:0;}
+  .class-desc{max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s ease;background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 14px 14px;padding:0 16px;font-size:12.5px;color:var(--muted);line-height:1.7;white-space:pre-wrap;}
+  .class-desc.open{max-height:300px;padding:12px 16px;}
   .class-info .time{font-size:15px;font-weight:700;color:var(--ink);}
   .class-info .meta{font-size:12.5px;color:var(--muted);margin-top:3px;}
   .class-info .meta span{margin-right:8px;}
@@ -327,7 +332,7 @@ function buildSchedule(){
         classKey: `${dateKey}_${t.id}`,
         templateId: t.id,
         date: dateStr, dateKey, year, month, day,
-        time: t.time, title: t.title, teacher: t.teacher, cap: t.cap
+        time: t.time, title: t.title, teacher: t.teacher, cap: t.cap, description: t.description||''
       }));
 
     // 加入這天後台加開的特別課
@@ -335,7 +340,7 @@ function buildSchedule(){
       classKey: `${dateKey}_extra_${o.id}`,
       templateId: null,
       date: dateStr, dateKey, year, month, day,
-      time: o.time, title: o.title, teacher: o.teacher, cap: o.cap,
+      time: o.time, title: o.title, teacher: o.teacher, cap: o.cap, description: o.description||'',
       isExtra: true
     }));
     dayClasses = dayClasses.concat(extras).sort((a,b)=>a.time.localeCompare(b.time));
@@ -473,15 +478,30 @@ function classCardHTML(c){
     btn = `<button class="book-btn primary" onclick="openBookModal('${c.classKey}')">預約</button>`;
   }
 
+  const infoBtn = c.description
+    ? `<button class="info-btn" onclick="toggleDescription('${c.classKey}')" aria-label="課程介紹">ℹ️</button>`
+    : '';
+
   return `
-    <div class="class-card">
-      <div class="class-info">
-        <div class="time">${c.time}　${c.title}</div>
-        <div class="meta"><span>👤 ${c.teacher} 老師</span></div>
-        <span class="seat-tag ${tagClass}">${tagText}</span>
+    <div class="class-card-wrap">
+      <div class="class-card">
+        <div class="class-info">
+          <div class="time">${c.time}　${c.title}</div>
+          <div class="meta"><span>👤 ${c.teacher} 老師</span></div>
+          <span class="seat-tag ${tagClass}">${tagText}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+          ${btn}
+          ${infoBtn}
+        </div>
       </div>
-      ${btn}
+      ${c.description ? `<div class="class-desc" id="desc-${c.classKey}">${c.description}</div>` : ''}
     </div>`;
+}
+
+function toggleDescription(classKey){
+  const el = document.getElementById(`desc-${classKey}`);
+  if(el) el.classList.toggle('open');
 }
 
 function buildCalendarHTML(){
