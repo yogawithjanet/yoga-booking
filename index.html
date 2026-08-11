@@ -114,9 +114,13 @@
   .cal-cell{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:10px;cursor:pointer;font-size:13px;color:var(--ink);}
   .cal-cell.empty{cursor:default;}
   .cal-cell.disabled{color:#d8d4c9;cursor:default;}
-  .cal-dot{width:4px;height:4px;border-radius:50%;background:var(--sage);margin-top:3px;}
+  .cal-dots{display:flex;gap:2.5px;margin-top:3px;}
+  .cal-dot{width:4px;height:4px;border-radius:50%;background:var(--sage);}
+  .cal-dot.open{background:#3fa35e;}
+  .cal-dot.full{background:#d1503a;}
   .cal-cell.selected{background:var(--line-green);color:#fff;font-weight:700;}
-  .cal-cell.selected .cal-dot{background:#fff;}
+  .cal-cell.selected .cal-dot.open,
+  .cal-cell.selected .cal-dot.full{background:#fff;opacity:.9;}
   .cal-cell.today:not(.selected){box-shadow:inset 0 0 0 1.5px var(--sage);font-weight:700;}
 
   ::-webkit-scrollbar{display:none;}
@@ -518,15 +522,23 @@ function buildCalendarHTML(){
     const info = state.scheduleByKey.get(key);
     const cellDate = new Date(year, month-1, day);
     const isPast = cellDate < now;
-    const hasClasses = info && info.classes.length>0 && !isPast;
     const isSelected = key===selectedDateKey;
     const isToday = key===todayKey;
     let cls = 'cal-cell';
     if(isSelected) cls += ' selected';
     if(isToday) cls += ' today';
     if(isPast || !info) cls += ' disabled';
+
+    let dotsHtml = '';
+    if(info && !isPast && info.classes.length>0){
+      dotsHtml = `<span class="cal-dots">${info.classes.map(c=>{
+        const isFull = seatsBooked(c.classKey) >= c.cap;
+        return `<span class="cal-dot ${isFull ? 'full' : 'open'}"></span>`;
+      }).join('')}</span>`;
+    }
+
     cells += `<div class="${cls}" ${(!isPast && info) ? `onclick="selectDate('${key}')"` : ''}>
-        <span>${day}</span>${hasClasses ? '<span class="cal-dot"></span>' : ''}
+        <span>${day}</span>${dotsHtml}
       </div>`;
   }
 
