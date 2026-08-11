@@ -58,7 +58,7 @@
   .class-card-wrap{margin-bottom:10px;}
   .class-card{background:var(--card);border:1px solid var(--line);border-radius:14px 14px 0 0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
   .class-card-wrap:has(.class-desc:not(.open)) .class-card{border-radius:14px;}
-  .info-btn{border:1px solid var(--line);background:var(--paper);color:var(--muted);width:28px;height:28px;border-radius:50%;font-size:13px;cursor:pointer;flex-shrink:0;}
+  .info-btn{border:1px solid var(--line);background:var(--paper);color:var(--sage);border-radius:20px;font-size:11.5px;font-weight:600;padding:5px 12px;cursor:pointer;flex-shrink:0;white-space:nowrap;}
   .class-desc{max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s ease;background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 14px 14px;padding:0 16px;font-size:12.5px;color:var(--muted);line-height:1.7;white-space:pre-wrap;}
   .class-desc.open{max-height:300px;padding:12px 16px;}
   .class-info .time{font-size:15px;font-weight:700;color:var(--ink);}
@@ -479,7 +479,7 @@ function classCardHTML(c){
   }
 
   const infoBtn = c.description
-    ? `<button class="info-btn" onclick="toggleDescription('${c.classKey}')" aria-label="課程介紹">ℹ️</button>`
+    ? `<button class="info-btn" onclick="toggleDescription('${c.classKey}')">課程介紹</button>`
     : '';
 
   return `
