@@ -6,6 +6,7 @@
 <title>瑜珈團課預約</title>
 <script src="https://static.line-scdn.net/liff/edge/2.1/sdk.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
 <style>
   :root{
     --line-green:#06C755;
@@ -41,8 +42,6 @@
   .credit-top .label{font-size:13px;color:var(--muted);letter-spacing:1px;}
   .credit-top .nums{font-size:14px;color:var(--ink);}
   .credit-top .nums b{font-size:26px;color:var(--sage);font-weight:800;}
-  .bar-track{height:8px;border-radius:6px;background:var(--sage-light);overflow:hidden;}
-  .bar-fill{height:100%;background:linear-gradient(90deg,var(--sage),#a3b399);border-radius:6px;transition:width .4s ease;}
   .credit-sub{margin-top:8px;font-size:12px;color:var(--muted);min-height:14px;}
 
   .tabs{display:flex;margin:18px 20px 6px;background:var(--sage-light);border-radius:12px;padding:4px;gap:4px;}
@@ -154,9 +153,8 @@
   <div class="credit-card">
     <div class="credit-top">
       <span class="label">剩餘堂數</span>
-      <span class="nums"><b id="creditRemaining">0</b> / <span id="creditTotal">0</span> 堂</span>
+      <span class="nums"><b id="creditRemaining">0</b> 堂</span>
     </div>
-    <div class="bar-track"><div class="bar-fill" id="creditBar" style="width:0%"></div></div>
     <div class="credit-sub" id="creditSub"></div>
   </div>
 
@@ -164,6 +162,7 @@
     <button class="tab-btn active" data-tab="book">預約課程</button>
     <button class="tab-btn" data-tab="mine">我的課表</button>
     <button class="tab-btn" data-tab="history">堂數紀錄</button>
+    <button class="tab-btn" data-tab="creditExpiry">堂數期限</button>
   </div>
 
   <main id="mainContent"></main>
@@ -205,13 +204,13 @@ function applyTheme(themeName){
   root.setProperty('--topbar-green', t.topbar);
 }
 
-/* ============ Supabase 連線設定 ============ */
-const SUPABASE_URL = 'https://zlopmhgwjeocuzopaoaa.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpsb3BtaGd3amVvY3V6b3Bhb2FhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2NjUxOTEsImV4cCI6MjEwMTI0MTE5MX0.UETCS69VOW2-gXgIBBkz2OJGjMQsO97L050wE_2Z3S8';
+/* ============ Supabase 連線設定（實際數值放在 config.js，不進版控） ============ */
+const SUPABASE_URL = window.APP_CONFIG.SUPABASE_URL;
+const SUPABASE_ANON_KEY = window.APP_CONFIG.SUPABASE_ANON_KEY;
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============ LIFF 設定 ============ */
-const LIFF_ID = '2010908944-FrI4dOOM';
+const LIFF_ID = window.APP_CONFIG.LIFF_ID;
 let lineProfile = { userId: 'demo-user', displayName: '王小美', pictureUrl: null };
 let isDemoMode = true;
 
@@ -245,6 +244,7 @@ let state = {
   overrides: [],        // 後台設定的單日停課／加開特別課
   seatsMap: {},        // class_key -> 目前已預約人數
   myBookings: [],       // 這個學生的所有預約（含已取消）
+  creditBatches: [],    // 這個學生的堂數批次（各自效期，用於「查看點數紀錄」）
   bookingWindowDays: 30,   // 開放預約的天數（沒設定明確區間時的備用規則）
   bookingOpenStart: null,  // 後台指定的開放預約開始日期（YYYY-MM-DD）
   bookingOpenEnd: null,    // 後台指定的開放預約結束日期（YYYY-MM-DD）
@@ -443,6 +443,14 @@ async function loadMyBookings(){
   state.myBookings = (!error && data) ? data : [];
 }
 
+async function loadMyCreditBatches(){
+  const { data, error } = await db.from('credit_batches')
+    .select('*')
+    .eq('line_user_id', lineProfile.userId)
+    .order('expires_at', { ascending: true, nullsFirst: false });
+  state.creditBatches = (!error && data) ? data : [];
+}
+
 async function loadAll(){
   await Promise.all([ loadBookingRules(), loadOverrides() ]); // 產生課表前，要先知道開放區間跟單日調整
   await Promise.all([
@@ -450,7 +458,7 @@ async function loadAll(){
     loadTemplatesAndSchedule().then(loadSeatsMap),
     ensureMemberAndLoadCredits()
   ]);
-  await loadMyBookings();
+  await Promise.all([ loadMyBookings(), loadMyCreditBatches() ]);
 }
 
 /* ============ 畫面渲染 ============ */
@@ -632,19 +640,33 @@ function renderHistoryTab(){
 
 function renderCreditCard(){
   document.getElementById('creditRemaining').textContent = state.creditsRemaining;
-  document.getElementById('creditTotal').textContent = state.creditsTotal;
-  const pct = state.creditsTotal > 0
-    ? Math.max(0, Math.min(100, (state.creditsRemaining / state.creditsTotal) * 100))
-    : 0;
-  document.getElementById('creditBar').style.width = pct + '%';
   const sub = document.getElementById('creditSub');
-  if(state.creditsRemaining<=0){
-    sub.textContent = '堂數已用完，請直接聯繫老師或櫃檯加購堂數';
-  } else if(state.creditsRemaining<=2){
-    sub.textContent = `只剩 ${state.creditsRemaining} 堂，記得提早安排練習時間`;
-  } else {
-    sub.textContent = '';
+  sub.textContent = state.creditsRemaining<=0 ? '你好棒！把堂數都用完，給自己大大的掌聲吧！' : '';
+}
+
+/* ============ 堂數期限（分頁） ============ */
+function renderCreditExpiryTab(){
+  if(state.creditBatches.length===0){
+    return `<div class="empty-state"><div class="icon">🗓️</div><div class="msg">目前沒有堂數紀錄</div></div>`;
   }
+  const todayStr = new Date().toISOString().slice(0,10);
+  let html = `<div class="day-group"><div class="day-title">堂數期限</div>`;
+  state.creditBatches.forEach(b=>{
+    const isExpired = b.expires_at && b.expires_at < todayStr;
+    const expiryLabel = b.expires_at
+      ? (isExpired ? `已過期（${b.expires_at}）` : `效期至 ${b.expires_at}`)
+      : '永久有效';
+    html += `
+      <div class="history-item">
+        <div>
+          <div class="h-type">新增 ${b.amount} 堂</div>
+          <div class="h-date">${expiryLabel}</div>
+        </div>
+        <div class="h-type ${isExpired ? 'minus' : 'plus'}">剩 ${b.remaining} 堂</div>
+      </div>`;
+  });
+  html += `</div>`;
+  return html;
 }
 
 function renderUserInfo(){
@@ -668,7 +690,8 @@ function render(){
   const main = document.getElementById('mainContent');
   if(activeTab==='book') main.innerHTML = renderBookTab();
   else if(activeTab==='mine') main.innerHTML = renderMineTab();
-  else main.innerHTML = renderHistoryTab();
+  else if(activeTab==='history') main.innerHTML = renderHistoryTab();
+  else main.innerHTML = renderCreditExpiryTab();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn=>{
