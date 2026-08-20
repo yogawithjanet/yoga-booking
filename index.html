@@ -826,22 +826,30 @@ async function bookClass(c){
 }
 
 async function cancelBooking(bookingId){
-  const b = state.myBookings.find(x=>x.id===bookingId);
-  if(!b) return;
+  if(isProcessingBooking){ return; } // 防止手滑連點兩下，重複退還堂數
+  isProcessingBooking = true;
+  try{
+    const b = state.myBookings.find(x=>x.id===bookingId);
+    if(!b) return;
+    if(b.status !== 'active'){ return; } // 已經是取消狀態了（例如上一次連點已經處理過），不要重複退還
 
-  const { error } = await db.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
-  if(error){ showToast('取消失敗，請稍後再試'); console.error(error); return; }
+    const { data: updated, error } = await db.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId).eq('status', 'active').select('id');
+    if(error){ showToast('取消失敗，請稍後再試'); console.error(error); return; }
+    if(!updated || updated.length===0){ return; } // 這筆已經被取消過了（例如另一個分頁或連點造成的重複請求），不要重複退還堂數
 
-  if(b.credit_batch_id){
-    await refundOneCredit(lineProfile.userId, b.credit_batch_id); // 退回原本扣的那一批
+    if(b.credit_batch_id){
+      await refundOneCredit(lineProfile.userId, b.credit_batch_id); // 退回原本扣的那一批
+    }
+    const newRemaining = state.creditsRemaining + 1;
+    await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineProfile.userId);
+    state.creditsRemaining = newRemaining;
+
+    await Promise.all([loadSeatsMap(), loadMyBookings()]);
+    render();
+    showToast('已取消預約，堂數已退還');
+  } finally {
+    isProcessingBooking = false;
   }
-  const newRemaining = state.creditsRemaining + 1;
-  await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineProfile.userId);
-  state.creditsRemaining = newRemaining;
-
-  await Promise.all([loadSeatsMap(), loadMyBookings()]);
-  render();
-  showToast('已取消預約，堂數已退還');
 }
 
 /* ============ 初始化 ============ */
