@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>瑜珈團課預約</title>
+<title>團課預約</title>
 <script src="https://static.line-scdn.net/liff/edge/2.1/sdk.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
@@ -139,7 +139,7 @@
 
 <div id="app" style="display:none;">
   <div class="line-topbar">
-    <span id="topbarStoreName">瑜珈時光</span>
+    <span id="topbarStoreName">團課教室</span>
   </div>
 
   <header class="app-header">
@@ -234,7 +234,7 @@ async function initLiff(){
 
 /* ============ 資料狀態 ============ */
 let state = {
-  storeName: '瑜珈時光',
+  storeName: '團課教室',
   creditsRemaining: 0,
   creditsTotal: 0,
   templates: [],      // 課程範本（來自 class_templates）
