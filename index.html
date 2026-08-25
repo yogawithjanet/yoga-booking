@@ -295,7 +295,9 @@ let state = {
   registrationSubmittedAt: null,   // 這個學員填過註冊表單的時間（null＝還沒填過＝新學員）
   registrationName: '',
   registrationContact: '',
-  registrationAnswers: {}
+  registrationAnswers: {},
+  registrationShowName: true,      // 表單要不要顯示固定的「姓名」欄位（後台可以關掉，改用自訂問題）
+  registrationShowContact: true    // 表單要不要顯示固定的「聯絡方式」欄位
 };
 
 let activeTab = 'book';
@@ -306,10 +308,13 @@ const WEEKDAY_LABELS = ['日','一','二','三','四','五','六'];
 
 /* ============ 讀取資料 ============ */
 async function loadStoreName(){
-  const { data, error } = await db.from('store_settings').select('name, theme, registration_form_status').eq('id', 1).single();
+  const { data, error } = await db.from('store_settings')
+    .select('name, theme, registration_form_status, registration_show_name, registration_show_contact').eq('id', 1).single();
   if(!error && data){
     state.storeName = data.name;
     state.registrationFormStatus = data.registration_form_status || 'draft';
+    state.registrationShowName = data.registration_show_name !== false;
+    state.registrationShowContact = data.registration_show_contact !== false;
     applyTheme(data.theme || 'sage');
   }
 }
@@ -943,13 +948,13 @@ function renderRegistrationForm(editing){
       <p>${editing ? '確認或修改你的資料，填好後按下面的按鈕儲存。' : '填寫以下資料完成報名，我們會盡快跟你聯繫。'}</p>
     </div>
     <div class="reg-body">
-      <div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>
-      <div class="reg-field"><label>聯絡方式（電話或 LINE ID）<span class="req">*</span></label><input type="tel" id="regContact" placeholder="方便聯繫你的方式" value="${state.registrationContact||''}"></div>
+      ${state.registrationShowName ? `<div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : ''}
+      ${state.registrationShowContact ? `<div class="reg-field"><label>聯絡方式（電話或 LINE ID）<span class="req">*</span></label><input type="tel" id="regContact" placeholder="方便聯繫你的方式" value="${state.registrationContact||''}"></div>` : ''}
       ${state.registrationQuestions.map(q=>{
         const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
         return `
         <div class="reg-field">
-          <label>${q.question}</label>
+          <label>${q.question}${q.required ? '<span class="req">*</span>' : ''}</label>
           ${q.type==='choice' ? `
             <div class="reg-choice">
               ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${q.id}" value="${o}" ${existingAns===o?'checked':''}>${o}</label>`).join('')}
@@ -964,21 +969,26 @@ function renderRegistrationForm(editing){
 
 async function submitRegistration(){
   if(registrationSubmitting) return;
-  const name = document.getElementById('regName').value.trim();
-  const contact = document.getElementById('regContact').value.trim();
-  if(!name){ showToast('請輸入姓名'); return; }
-  if(!contact){ showToast('請輸入聯絡方式'); return; }
+  const nameEl = document.getElementById('regName');
+  const contactEl = document.getElementById('regContact');
+  const name = nameEl ? nameEl.value.trim() : (state.registrationName||'');
+  const contact = contactEl ? contactEl.value.trim() : (state.registrationContact||'');
+  if(state.registrationShowName && !name){ showToast('請輸入姓名'); return; }
+  if(state.registrationShowContact && !contact){ showToast('請輸入聯絡方式'); return; }
 
   const answers = {};
-  state.registrationQuestions.forEach(q=>{
+  for(const q of state.registrationQuestions){
+    let val = null;
     if(q.type==='choice'){
       const checked = document.querySelector(`input[name="reg_${q.id}"]:checked`);
-      if(checked) answers[q.id] = checked.value;
+      val = checked ? checked.value : null;
     } else {
-      const val = document.getElementById(`reg_${q.id}`).value.trim();
-      if(val) answers[q.id] = val;
+      const raw = document.getElementById(`reg_${q.id}`).value.trim();
+      val = raw || null;
     }
-  });
+    if(q.required && !val){ showToast(`請填寫「${q.question}」`); return; }
+    if(val) answers[q.id] = val;
+  }
 
   registrationSubmitting = true;
   try{
