@@ -128,6 +128,41 @@
   .spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--sage-light);border-top-color:var(--sage);animation:spin .8s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
   #loadingScreen p{font-size:13px;color:var(--muted);margin:0;}
+
+  /* ============ 會員註冊表單 ============ */
+  #registrationScreen{width:100%;max-width:430px;min-height:100vh;background:var(--paper);display:none;flex-direction:column;}
+  .reg-back{padding:14px 20px 0;}
+  .reg-back span{cursor:pointer;color:var(--sage);font-size:13px;}
+  .reg-header{padding:20px 20px 4px;}
+  .reg-header h2{margin:0 0 6px;font-size:18px;}
+  .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;}
+  .reg-body{padding:16px 20px 28px;}
+  .reg-field{margin-bottom:18px;}
+  .reg-field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:8px;}
+  .reg-field .req{color:var(--danger);margin-left:2px;}
+  .reg-field input[type="text"], .reg-field input[type="tel"]{
+    width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+    font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);
+  }
+  .reg-choice{display:flex;flex-direction:column;gap:8px;}
+  .reg-choice label{
+    display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;
+    padding:11px 14px;font-size:13.5px;font-weight:500;cursor:pointer;background:var(--card);
+  }
+  .reg-choice input{width:16px;height:16px;}
+  .reg-submit{
+    width:100%;border:none;border-radius:26px;padding:14px;font-size:14.5px;font-weight:700;
+    background:var(--line-green);color:#fff;cursor:pointer;
+  }
+  .reg-submit:active{transform:scale(0.98);}
+  .reg-thanks{text-align:center;padding:60px 24px;}
+  .reg-thanks .icon{font-size:44px;margin-bottom:14px;}
+  .reg-thanks h3{margin:0 0 8px;font-size:17px;}
+  .reg-thanks p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.7;}
+  .reg-settings-btn{
+    border:1px solid var(--line);background:var(--paper);color:var(--sage);
+    border-radius:20px;font-size:11.5px;font-weight:600;padding:6px 12px;cursor:pointer;flex-shrink:0;white-space:nowrap;
+  }
 </style>
 </head>
 <body>
@@ -148,6 +183,7 @@
       <div class="greet">你好，</div>
       <div class="name" id="userName">王小美</div>
     </div>
+    <button class="reg-settings-btn" id="regSettingsBtn" style="display:none;" onclick="openRegistrationScreen(true)">⚙️ 會員資料設定</button>
   </header>
 
   <div class="credit-card">
@@ -166,6 +202,11 @@
   </div>
 
   <main id="mainContent"></main>
+</div>
+
+<div id="registrationScreen">
+  <div class="line-topbar" id="regTopbar">會員註冊</div>
+  <div id="registrationContent"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -248,7 +289,13 @@ let state = {
   bookingWindowDays: 30,   // 開放預約的天數（沒設定明確區間時的備用規則）
   bookingOpenStart: null,  // 後台指定的開放預約開始日期（YYYY-MM-DD）
   bookingOpenEnd: null,    // 後台指定的開放預約結束日期（YYYY-MM-DD）
-  cancelDeadlineMinutes: 60 // 上課前幾分鐘內不可取消（由後台設定）
+  cancelDeadlineMinutes: 60, // 上課前幾分鐘內不可取消（由後台設定）
+  registrationFormStatus: 'draft', // 會員註冊表單是否已啟用
+  registrationQuestions: [],       // 啟用中的註冊問題
+  registrationSubmittedAt: null,   // 這個學員填過註冊表單的時間（null＝還沒填過＝新學員）
+  registrationName: '',
+  registrationContact: '',
+  registrationAnswers: {}
 };
 
 let activeTab = 'book';
@@ -259,11 +306,18 @@ const WEEKDAY_LABELS = ['日','一','二','三','四','五','六'];
 
 /* ============ 讀取資料 ============ */
 async function loadStoreName(){
-  const { data, error } = await db.from('store_settings').select('name, theme').eq('id', 1).single();
+  const { data, error } = await db.from('store_settings').select('name, theme, registration_form_status').eq('id', 1).single();
   if(!error && data){
     state.storeName = data.name;
+    state.registrationFormStatus = data.registration_form_status || 'draft';
     applyTheme(data.theme || 'sage');
   }
+}
+
+async function loadRegistrationQuestions(){
+  const { data, error } = await db.from('registration_questions')
+    .select('*').eq('active', true).order('sort_order');
+  state.registrationQuestions = (!error && data) ? data : [];
 }
 
 async function loadBookingRules(){
@@ -428,11 +482,15 @@ async function ensureMemberAndLoadCredits(){
   await sweepExpiredCredits(lineProfile.userId); // 先把過期的批次歸零、同步扣掉總數
 
   const { data, error } = await db.from('members')
-    .select('remaining_credits, total_credits')
+    .select('remaining_credits, total_credits, registration_submitted_at, registration_name, registration_contact, registration_answers')
     .eq('line_user_id', lineProfile.userId).single();
 
   state.creditsRemaining = (!error && data) ? data.remaining_credits : 0;
   state.creditsTotal = (!error && data) ? (data.total_credits || 0) : 0;
+  state.registrationSubmittedAt = (!error && data) ? data.registration_submitted_at : null;
+  state.registrationName = (!error && data && data.registration_name) || '';
+  state.registrationContact = (!error && data && data.registration_contact) || '';
+  state.registrationAnswers = (!error && data && data.registration_answers) || {};
 }
 
 async function loadMyBookings(){
@@ -455,6 +513,7 @@ async function loadAll(){
   await Promise.all([ loadBookingRules(), loadOverrides() ]); // 產生課表前，要先知道開放區間跟單日調整
   await Promise.all([
     loadStoreName(),
+    loadRegistrationQuestions(),
     loadTemplatesAndSchedule().then(loadSeatsMap),
     ensureMemberAndLoadCredits()
   ]);
@@ -852,6 +911,104 @@ async function cancelBooking(bookingId){
   }
 }
 
+/* ============ 會員註冊 ============ */
+// 「新學員」的判斷依據：表單有沒有啟用、這個 LINE 帳號有沒有留下註冊資料
+// （state.registrationSubmittedAt）。如果後台把某位學員的註冊資料清掉，
+// 他下次打開就會被當成新學員，重新看到這個表單——這是刻意設計成這樣的。
+let isEditingProfile = false;
+let registrationSubmitting = false;
+
+function needsRegistration(){
+  return state.registrationFormStatus==='published' && !state.registrationSubmittedAt;
+}
+
+function openRegistrationScreen(editing){
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('registrationScreen').style.display = 'flex';
+  renderRegistrationForm(editing);
+}
+function closeRegistrationScreen(){
+  document.getElementById('registrationScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+}
+
+function renderRegistrationForm(editing){
+  isEditingProfile = editing;
+  document.getElementById('regTopbar').textContent = editing ? '編輯我的會員資料' : '會員註冊';
+  const content = document.getElementById('registrationContent');
+  content.innerHTML = `
+    ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（不儲存）</span></div>` : ''}
+    <div class="reg-header">
+      <h2>${editing ? '編輯我的會員資料' : '會員註冊'}</h2>
+      <p>${editing ? '確認或修改你的資料，填好後按下面的按鈕儲存。' : '填寫以下資料完成報名，我們會盡快跟你聯繫。'}</p>
+    </div>
+    <div class="reg-body">
+      <div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>
+      <div class="reg-field"><label>聯絡方式（電話或 LINE ID）<span class="req">*</span></label><input type="tel" id="regContact" placeholder="方便聯繫你的方式" value="${state.registrationContact||''}"></div>
+      ${state.registrationQuestions.map(q=>{
+        const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
+        return `
+        <div class="reg-field">
+          <label>${q.question}</label>
+          ${q.type==='choice' ? `
+            <div class="reg-choice">
+              ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${q.id}" value="${o}" ${existingAns===o?'checked':''}>${o}</label>`).join('')}
+            </div>` : `
+            <input type="text" id="reg_${q.id}" placeholder="請輸入" value="${existingAns||''}">`
+          }
+        </div>`;
+      }).join('')}
+      <button class="reg-submit" onclick="submitRegistration()">${editing ? '儲存變更' : '送出'}</button>
+    </div>`;
+}
+
+async function submitRegistration(){
+  if(registrationSubmitting) return;
+  const name = document.getElementById('regName').value.trim();
+  const contact = document.getElementById('regContact').value.trim();
+  if(!name){ showToast('請輸入姓名'); return; }
+  if(!contact){ showToast('請輸入聯絡方式'); return; }
+
+  const answers = {};
+  state.registrationQuestions.forEach(q=>{
+    if(q.type==='choice'){
+      const checked = document.querySelector(`input[name="reg_${q.id}"]:checked`);
+      if(checked) answers[q.id] = checked.value;
+    } else {
+      const val = document.getElementById(`reg_${q.id}`).value.trim();
+      if(val) answers[q.id] = val;
+    }
+  });
+
+  registrationSubmitting = true;
+  try{
+    const nowIso = new Date().toISOString();
+    const { error } = await db.from('members').update({
+      registration_name: name,
+      registration_contact: contact,
+      registration_answers: answers,
+      registration_submitted_at: nowIso
+    }).eq('line_user_id', lineProfile.userId);
+    if(error){ showToast('送出失敗，請稍後再試'); console.error(error); return; }
+
+    state.registrationName = name;
+    state.registrationContact = contact;
+    state.registrationAnswers = answers;
+    state.registrationSubmittedAt = nowIso;
+
+    const editing = isEditingProfile;
+    document.getElementById('registrationContent').innerHTML = `
+      <div class="reg-thanks">
+        <div class="icon">🎉</div>
+        <h3>${editing ? '資料已更新！' : '報名完成，謝謝你！'}</h3>
+        <p>${editing ? '你的會員資料已經儲存，之後隨時可以再點「會員資料設定」修改。' : '我們收到你的資料了，會再透過 LINE 跟你聯繫後續上課細節。'}</p>
+        <button class="reg-submit" style="margin-top:10px;" onclick="closeRegistrationScreen()">${editing ? '返回主畫面' : '開始使用'}</button>
+      </div>`;
+  } finally {
+    registrationSubmitting = false;
+  }
+}
+
 /* ============ 初始化 ============ */
 (async function init(){
   try{
@@ -864,7 +1021,16 @@ async function cancelBooking(bookingId){
   }
 
   document.getElementById('loadingScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
+
+  if(state.registrationFormStatus==='published'){
+    document.getElementById('regSettingsBtn').style.display = 'inline-block';
+  }
+
+  if(needsRegistration()){
+    openRegistrationScreen(false);
+  } else {
+    document.getElementById('app').style.display = 'flex';
+  }
 
   if(isDemoMode){
     const badge = document.createElement('div');
