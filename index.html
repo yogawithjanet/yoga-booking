@@ -297,7 +297,7 @@ let state = {
   registrationContact: '',
   registrationAnswers: {},
   registrationShowName: true,      // 表單要不要顯示固定的「姓名」欄位（後台可以關掉，改用自訂問題）
-  registrationShowContact: true    // 表單要不要顯示固定的「聯絡方式」欄位
+  registrationShowContact: true    // 表單要不要顯示固定的「e-mail」欄位
 };
 
 let activeTab = 'book';
@@ -949,7 +949,7 @@ function renderRegistrationForm(editing){
     </div>
     <div class="reg-body">
       ${state.registrationShowName ? `<div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : ''}
-      ${state.registrationShowContact ? `<div class="reg-field"><label>聯絡方式（電話或 LINE ID）<span class="req">*</span></label><input type="tel" id="regContact" placeholder="方便聯繫你的方式" value="${state.registrationContact||''}"></div>` : ''}
+      ${state.registrationShowContact ? `<div class="reg-field"><label>e-mail<span class="req">*</span></label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : ''}
       ${state.registrationQuestions.map(q=>{
         const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
         return `
@@ -974,7 +974,7 @@ async function submitRegistration(){
   const name = nameEl ? nameEl.value.trim() : (state.registrationName||'');
   const contact = contactEl ? contactEl.value.trim() : (state.registrationContact||'');
   if(state.registrationShowName && !name){ showToast('請輸入姓名'); return; }
-  if(state.registrationShowContact && !contact){ showToast('請輸入聯絡方式'); return; }
+  if(state.registrationShowContact && !contact){ showToast('請輸入 e-mail'); return; }
 
   const answers = {};
   for(const q of state.registrationQuestions){
