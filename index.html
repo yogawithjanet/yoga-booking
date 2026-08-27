@@ -155,6 +155,7 @@
   .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;}
   .reg-body{padding:16px 20px 28px;}
   .reg-field{margin-bottom:18px;}
+  .reg-note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.7;white-space:pre-wrap;margin-bottom:18px;}
   .reg-field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:8px;}
   .reg-field .req{color:var(--danger);margin-left:2px;}
   .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"]{
@@ -1029,6 +1030,9 @@ function renderRegistrationForm(editing){
       ${state.registrationShowName ? `<div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : ''}
       ${state.registrationShowContact ? `<div class="reg-field"><label>e-mail<span class="req">*</span></label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : ''}
       ${state.registrationQuestions.map(q=>{
+        if(q.type==='note'){
+          return `<div class="reg-note">${q.question}</div>`;
+        }
         const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
         return `
         <div class="reg-field">
@@ -1060,6 +1064,7 @@ async function submitRegistration(){
 
   const answers = {};
   for(const q of state.registrationQuestions){
+    if(q.type==='note') continue; // 說明文字不是問題，不用收答案
     let val = null;
     if(q.type==='choice'){
       const checked = document.querySelector(`input[name="reg_${q.id}"]:checked`);
