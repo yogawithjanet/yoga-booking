@@ -94,6 +94,21 @@
   .modal-overlay.show{opacity:1;pointer-events:all;}
   .modal{width:100%;max-width:430px;background:#fff;border-radius:20px 20px 0 0;padding:22px 22px 28px;transform:translateY(30px);transition:transform .25s;}
   .modal-overlay.show .modal{transform:translateY(0);}
+
+  /* ---- 公告推播：置中彈窗，跟一般確認用的底部彈窗不同 ---- */
+  #announcementOverlay{align-items:center;padding:20px;}
+  #announcementOverlay .modal{
+    max-width:380px;border-radius:20px;position:relative;
+    transform:scale(.92);max-height:85vh;overflow-y:auto;
+  }
+  #announcementOverlay.show .modal{transform:scale(1);}
+  .announcement-close-x{
+    position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;
+    border:none;background:rgba(0,0,0,.06);color:var(--ink);font-size:13px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;z-index:2;
+  }
+  .announcement-close-x:hover{background:rgba(0,0,0,.12);}
+  #announcementImage{width:100%;border-radius:14px;margin-bottom:14px;display:block;}
   .modal h3{margin:0 0 6px;font-size:17px;}
   .modal p{margin:0 0 18px;font-size:13.5px;color:var(--muted);line-height:1.6;white-space:pre-wrap;}
   .modal-actions{display:flex;gap:10px;}
@@ -223,7 +238,9 @@
 </div>
 
 <div class="modal-overlay" id="announcementOverlay">
-  <div class="modal">
+  <div class="modal announcement-modal">
+    <button class="announcement-close-x" onclick="closeAnnouncement()" aria-label="關閉">✕</button>
+    <img id="announcementImage" src="" style="display:none;">
     <h3 id="announcementTitle"></h3>
     <p id="announcementBody" style="white-space:pre-wrap;"></p>
     <div class="modal-actions">
@@ -333,11 +350,12 @@ async function loadAnnouncement(){
   // 用獨立查詢，即使資料庫還沒跑 migration（沒有這幾個欄位）也不會影響上面 loadStoreName 的其他資料
   try{
     const { data, error } = await db.from('store_settings')
-      .select('announcement_enabled, announcement_title, announcement_content').eq('id', 1).single();
+      .select('announcement_enabled, announcement_title, announcement_content, announcement_image').eq('id', 1).single();
     if(!error && data){
       state.announcementEnabled = !!data.announcement_enabled;
       state.announcementTitle = data.announcement_title || '';
       state.announcementContent = data.announcement_content || '';
+      state.announcementImage = data.announcement_image || '';
     }
   }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
 }
@@ -820,6 +838,13 @@ function maybeShowAnnouncement(){
   if(!state.announcementEnabled || !state.announcementContent) return;
   document.getElementById('announcementTitle').textContent = state.announcementTitle || '公告';
   document.getElementById('announcementBody').textContent = state.announcementContent;
+  const imgEl = document.getElementById('announcementImage');
+  if(state.announcementImage){
+    imgEl.src = state.announcementImage;
+    imgEl.style.display = 'block';
+  } else {
+    imgEl.style.display = 'none';
+  }
   document.getElementById('announcementOverlay').classList.add('show');
 }
 function closeAnnouncement(){
