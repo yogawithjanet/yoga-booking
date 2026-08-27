@@ -38,10 +38,12 @@
   .header-text .name{font-size:17px;font-weight:700;letter-spacing:.5px;}
 
   .credit-card{margin:16px 20px 4px;background:var(--card);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.04);border:1px solid var(--line);}
-  .credit-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
-  .credit-top .label{font-size:13px;color:var(--muted);letter-spacing:1px;}
-  .credit-top .nums{font-size:14px;color:var(--ink);}
-  .credit-top .nums b{font-size:26px;color:var(--sage);font-weight:800;}
+  .credit-split{display:flex;align-items:center;margin-bottom:10px;}
+  .credit-stat{flex:1;text-align:center;}
+  .credit-stat .label{font-size:12px;color:var(--muted);letter-spacing:.5px;margin-bottom:4px;}
+  .credit-stat .nums{font-size:13px;color:var(--ink);}
+  .credit-stat .nums b{font-size:24px;color:var(--sage);font-weight:800;}
+  .credit-divider{width:1px;height:36px;background:var(--line);margin:0 14px;flex-shrink:0;}
   .credit-sub{margin-top:8px;font-size:12px;color:var(--muted);min-height:14px;}
 
   .tabs{display:flex;margin:18px 20px 6px;background:var(--sage-light);border-radius:12px;padding:4px;gap:4px;}
@@ -155,7 +157,7 @@
   .reg-field{margin-bottom:18px;}
   .reg-field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:8px;}
   .reg-field .req{color:var(--danger);margin-left:2px;}
-  .reg-field input[type="text"], .reg-field input[type="tel"]{
+  .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"]{
     width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
     font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);
   }
@@ -202,9 +204,16 @@
   </header>
 
   <div class="credit-card">
-    <div class="credit-top">
-      <span class="label">剩餘堂數</span>
-      <span class="nums"><b id="creditRemaining">0</b> 堂</span>
+    <div class="credit-split">
+      <div class="credit-stat">
+        <div class="label">已預約（尚未完成）</div>
+        <div class="nums"><b id="creditBooked">0</b> 堂</div>
+      </div>
+      <div class="credit-divider"></div>
+      <div class="credit-stat">
+        <div class="label">剩餘堂數</div>
+        <div class="nums"><b id="creditRemaining">0</b> 堂</div>
+      </div>
     </div>
     <div class="credit-sub" id="creditSub"></div>
   </div>
@@ -745,6 +754,9 @@ function renderHistoryTab(){
 }
 
 function renderCreditCard(){
+  const todayIso = new Date().toISOString().slice(0,10);
+  const bookedCount = state.myBookings.filter(b => b.status==='active' && b.class_date_iso && b.class_date_iso >= todayIso).length;
+  document.getElementById('creditBooked').textContent = bookedCount;
   document.getElementById('creditRemaining').textContent = state.creditsRemaining;
   const sub = document.getElementById('creditSub');
   sub.textContent = state.creditsRemaining<=0 ? '你好棒！把堂數都用完，給自己大大的掌聲吧！' : '';
