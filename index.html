@@ -1030,7 +1030,11 @@ function renderRegistrationForm(editing){
           ${q.type==='choice' ? `
             <div class="reg-choice">
               ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${q.id}" value="${o}" ${existingAns===o?'checked':''}>${o}</label>`).join('')}
-            </div>` : `
+            </div>` : q.type==='multichoice' ? `
+            <div class="reg-choice">
+              ${(q.options||[]).map(o=>`<label><input type="checkbox" name="reg_${q.id}" value="${o}" ${Array.isArray(existingAns) && existingAns.includes(o) ? 'checked':''}>${o}</label>`).join('')}
+            </div>` : q.type==='date' ? `
+            <input type="date" id="reg_${q.id}" value="${existingAns||''}">` : `
             <input type="text" id="reg_${q.id}" placeholder="請輸入" value="${existingAns||''}">`
           }
         </div>`;
@@ -1054,6 +1058,12 @@ async function submitRegistration(){
     if(q.type==='choice'){
       const checked = document.querySelector(`input[name="reg_${q.id}"]:checked`);
       val = checked ? checked.value : null;
+    } else if(q.type==='multichoice'){
+      const checkedEls = [...document.querySelectorAll(`input[name="reg_${q.id}"]:checked`)];
+      val = checkedEls.length ? checkedEls.map(el=>el.value) : null;
+    } else if(q.type==='date'){
+      const raw = document.getElementById(`reg_${q.id}`).value;
+      val = raw || null;
     } else {
       const raw = document.getElementById(`reg_${q.id}`).value.trim();
       val = raw || null;
