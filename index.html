@@ -155,7 +155,7 @@
   .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;}
   .reg-body{padding:16px 20px 28px;}
   .reg-field{margin-bottom:18px;}
-  .reg-note{font-size:13px;color:var(--muted);line-height:1.6;white-space:pre-wrap;margin-bottom:18px;}
+  .reg-note{font-size:15px;color:var(--muted);line-height:1.6;white-space:pre-wrap;margin-bottom:18px;}
   .reg-field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:8px;}
   .reg-field .req{color:var(--danger);margin-left:2px;}
   .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"], .reg-field input[type="date"]{
@@ -335,7 +335,9 @@ let state = {
   registrationContact: '',
   registrationAnswers: {},
   registrationShowName: true,      // 表單要不要顯示固定的「姓名」欄位（後台可以關掉，改用自訂問題）
-  registrationShowContact: true    // 表單要不要顯示固定的「e-mail」欄位
+  registrationShowContact: true,   // 表單要不要顯示固定的「e-mail」欄位
+  registrationNameRequired: true,  // 姓名是否為必填
+  registrationContactRequired: true // e-mail 是否為必填
 };
 
 let activeTab = 'book';
@@ -375,9 +377,11 @@ async function loadRegistrationFieldOrder(){
   // 一樣用獨立查詢，避免資料庫還沒跑 migration 時影響到其他資料
   try{
     const { data, error } = await db.from('store_settings')
-      .select('registration_field_order').eq('id', 1).single();
-    if(!error && data && Array.isArray(data.registration_field_order)){
-      state.registrationFieldOrder = data.registration_field_order;
+      .select('registration_field_order, registration_name_required, registration_contact_required').eq('id', 1).single();
+    if(!error && data){
+      if(Array.isArray(data.registration_field_order)) state.registrationFieldOrder = data.registration_field_order;
+      state.registrationNameRequired = data.registration_name_required !== false;
+      state.registrationContactRequired = data.registration_contact_required !== false;
     }
   }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
 }
@@ -1052,10 +1056,10 @@ function computeFrontFieldOrder(){
 }
 function renderRegistrationFieldHTML(key){
   if(key==='name'){
-    return state.registrationShowName ? `<div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : '';
+    return state.registrationShowName ? `<div class="reg-field"><label>姓名${state.registrationNameRequired ? '<span class="req">*</span>' : ''}</label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : '';
   }
   if(key==='contact'){
-    return state.registrationShowContact ? `<div class="reg-field"><label>e-mail<span class="req">*</span></label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : '';
+    return state.registrationShowContact ? `<div class="reg-field"><label>e-mail${state.registrationContactRequired ? '<span class="req">*</span>' : ''}</label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : '';
   }
   if(!key.startsWith('q_')) return '';
   const q = state.registrationQuestions.find(x=>x.id===key.slice(2));
@@ -1082,7 +1086,7 @@ function renderRegistrationFieldHTML(key){
 
 function renderRegistrationForm(editing){
   isEditingProfile = editing;
-  document.getElementById('regTopbar').textContent = editing ? '編輯我的會員資料' : '會員註冊';
+  document.getElementById('regTopbar').textContent = state.storeName;
   const content = document.getElementById('registrationContent');
   content.innerHTML = `
     ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（不儲存）</span></div>` : ''}
@@ -1102,8 +1106,8 @@ async function submitRegistration(){
   const contactEl = document.getElementById('regContact');
   const name = nameEl ? nameEl.value.trim() : (state.registrationName||'');
   const contact = contactEl ? contactEl.value.trim() : (state.registrationContact||'');
-  if(state.registrationShowName && !name){ showToast('請輸入姓名'); return; }
-  if(state.registrationShowContact && !contact){ showToast('請輸入 e-mail'); return; }
+  if(state.registrationShowName && state.registrationNameRequired && !name){ showToast('請輸入姓名'); return; }
+  if(state.registrationShowContact && state.registrationContactRequired && !contact){ showToast('請輸入 e-mail'); return; }
 
   const answers = {};
   for(const q of state.registrationQuestions){
