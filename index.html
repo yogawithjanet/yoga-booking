@@ -155,10 +155,10 @@
   .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;}
   .reg-body{padding:16px 20px 28px;}
   .reg-field{margin-bottom:18px;}
-  .reg-note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.7;white-space:pre-wrap;margin-bottom:18px;}
+  .reg-note{font-size:13px;color:var(--muted);line-height:1.6;white-space:pre-wrap;margin-bottom:18px;}
   .reg-field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:8px;}
   .reg-field .req{color:var(--danger);margin-left:2px;}
-  .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"]{
+  .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"], .reg-field input[type="date"]{
     width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
     font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);
   }
@@ -329,6 +329,7 @@ let state = {
   cancelDeadlineMinutes: 60, // 上課前幾分鐘內不可取消（由後台設定）
   registrationFormStatus: 'draft', // 會員註冊表單是否已啟用
   registrationQuestions: [],       // 啟用中的註冊問題
+  registrationFieldOrder: [],      // 後台設定的欄位顯示順序（姓名／e-mail／各問題統一排序）
   registrationSubmittedAt: null,   // 這個學員填過註冊表單的時間（null＝還沒填過＝新學員）
   registrationName: '',
   registrationContact: '',
@@ -366,6 +367,17 @@ async function loadAnnouncement(){
       state.announcementTitle = data.announcement_title || '';
       state.announcementContent = data.announcement_content || '';
       state.announcementImage = data.announcement_image || '';
+    }
+  }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
+}
+
+async function loadRegistrationFieldOrder(){
+  // 一樣用獨立查詢，避免資料庫還沒跑 migration 時影響到其他資料
+  try{
+    const { data, error } = await db.from('store_settings')
+      .select('registration_field_order').eq('id', 1).single();
+    if(!error && data && Array.isArray(data.registration_field_order)){
+      state.registrationFieldOrder = data.registration_field_order;
     }
   }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
 }
@@ -570,6 +582,7 @@ async function loadAll(){
   await Promise.all([
     loadStoreName(),
     loadAnnouncement(),
+    loadRegistrationFieldOrder(),
     loadRegistrationQuestions(),
     loadTemplatesAndSchedule().then(loadSeatsMap),
     ensureMemberAndLoadCredits()
@@ -1016,6 +1029,57 @@ function closeRegistrationScreen(){
   if(!isEditingProfile) maybeShowAnnouncement(); // 只在「新學員剛完成註冊、第一次看到主畫面」時跳公告，編輯個人資料關閉時不要再跳一次
 }
 
+// 跟後台「computeRegFieldOrder」用同一套邏輯：姓名／e-mail／生日／年紀／其他問題
+// 統一用同一份順序清單決定顯示順序，這樣後台調整過的順序，前台才會如實呈現。
+function computeFrontFieldOrder(){
+  const birthdayQ = state.registrationQuestions.find(q=>q.question==='生日');
+  const ageQ = state.registrationQuestions.find(q=>q.question==='年紀');
+  const otherQs = [...state.registrationQuestions].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  const defaultOrder = [
+    'name',
+    ...(birthdayQ ? [`q_${birthdayQ.id}`] : []),
+    'contact',
+    ...(ageQ ? [`q_${ageQ.id}`] : []),
+    ...otherQs.filter(q=>q.question!=='生日' && q.question!=='年紀').map(q=>`q_${q.id}`)
+  ];
+  const validKeys = new Set(['name','contact', ...otherQs.map(q=>`q_${q.id}`)]);
+  const saved = Array.isArray(state.registrationFieldOrder) ? state.registrationFieldOrder : [];
+  if(saved.length===0) return defaultOrder;
+  let order = saved.filter(k=>validKeys.has(k));
+  const known = new Set(order);
+  defaultOrder.forEach(k=>{ if(!known.has(k)) order.push(k); });
+  return order;
+}
+function renderRegistrationFieldHTML(key){
+  if(key==='name'){
+    return state.registrationShowName ? `<div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : '';
+  }
+  if(key==='contact'){
+    return state.registrationShowContact ? `<div class="reg-field"><label>e-mail<span class="req">*</span></label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : '';
+  }
+  if(!key.startsWith('q_')) return '';
+  const q = state.registrationQuestions.find(x=>x.id===key.slice(2));
+  if(!q) return '';
+  if(q.type==='note'){
+    return `<div class="reg-note">${q.question}</div>`;
+  }
+  const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
+  return `
+  <div class="reg-field">
+    <label>${q.question}${q.required ? '<span class="req">*</span>' : ''}</label>
+    ${q.type==='choice' ? `
+      <div class="reg-choice">
+        ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${q.id}" value="${o}" ${existingAns===o?'checked':''}>${o}</label>`).join('')}
+      </div>` : q.type==='multichoice' ? `
+      <div class="reg-choice">
+        ${(q.options||[]).map(o=>`<label><input type="checkbox" name="reg_${q.id}" value="${o}" ${Array.isArray(existingAns) && existingAns.includes(o) ? 'checked':''}>${o}</label>`).join('')}
+      </div>` : q.type==='date' ? `
+      <input type="date" id="reg_${q.id}" value="${existingAns||''}">` : `
+      <input type="text" id="reg_${q.id}" placeholder="請輸入" value="${existingAns||''}">`
+    }
+  </div>`;
+}
+
 function renderRegistrationForm(editing){
   isEditingProfile = editing;
   document.getElementById('regTopbar').textContent = editing ? '編輯我的會員資料' : '會員註冊';
@@ -1024,31 +1088,10 @@ function renderRegistrationForm(editing){
     ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（不儲存）</span></div>` : ''}
     <div class="reg-header">
       <h2>${editing ? '編輯我的會員資料' : '會員註冊'}</h2>
-      <p>${editing ? '確認或修改你的資料，填好後按下面的按鈕儲存。' : '填寫以下資料完成報名，我們會盡快跟你聯繫。'}</p>
+      ${editing ? `<p>確認或修改你的資料，填好後按下面的按鈕儲存。</p>` : ''}
     </div>
     <div class="reg-body">
-      ${state.registrationShowName ? `<div class="reg-field"><label>姓名<span class="req">*</span></label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : ''}
-      ${state.registrationShowContact ? `<div class="reg-field"><label>e-mail<span class="req">*</span></label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : ''}
-      ${state.registrationQuestions.map(q=>{
-        if(q.type==='note'){
-          return `<div class="reg-note">${q.question}</div>`;
-        }
-        const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
-        return `
-        <div class="reg-field">
-          <label>${q.question}${q.required ? '<span class="req">*</span>' : ''}</label>
-          ${q.type==='choice' ? `
-            <div class="reg-choice">
-              ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${q.id}" value="${o}" ${existingAns===o?'checked':''}>${o}</label>`).join('')}
-            </div>` : q.type==='multichoice' ? `
-            <div class="reg-choice">
-              ${(q.options||[]).map(o=>`<label><input type="checkbox" name="reg_${q.id}" value="${o}" ${Array.isArray(existingAns) && existingAns.includes(o) ? 'checked':''}>${o}</label>`).join('')}
-            </div>` : q.type==='date' ? `
-            <input type="date" id="reg_${q.id}" value="${existingAns||''}">` : `
-            <input type="text" id="reg_${q.id}" placeholder="請輸入" value="${existingAns||''}">`
-          }
-        </div>`;
-      }).join('')}
+      ${computeFrontFieldOrder().map(renderRegistrationFieldHTML).join('')}
       <button class="reg-submit" onclick="submitRegistration()">${editing ? '儲存變更' : '送出'}</button>
     </div>`;
 }
