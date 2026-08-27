@@ -38,13 +38,13 @@
   .header-text .name{font-size:17px;font-weight:700;letter-spacing:.5px;}
 
   .credit-card{margin:16px 20px 4px;background:var(--card);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.04);border:1px solid var(--line);}
-  .credit-split{display:flex;align-items:center;margin-bottom:10px;}
+  .credit-split{display:flex;align-items:center;}
   .credit-stat{flex:1;text-align:center;}
   .credit-stat .label{font-size:12px;color:var(--muted);letter-spacing:.5px;margin-bottom:4px;}
   .credit-stat .nums{font-size:13px;color:var(--ink);}
   .credit-stat .nums b{font-size:24px;color:var(--sage);font-weight:800;}
   .credit-divider{width:1px;height:36px;background:var(--line);margin:0 14px;flex-shrink:0;}
-  .credit-sub{margin-top:8px;font-size:12px;color:var(--muted);min-height:14px;}
+  .credit-sub{margin-top:8px;font-size:12px;color:var(--muted);}
 
   .tabs{display:flex;margin:18px 20px 6px;background:var(--sage-light);border-radius:12px;padding:4px;gap:4px;}
   .tab-btn{flex:1;border:none;background:transparent;padding:9px 0;font-size:13px;font-weight:600;color:var(--sage);border-radius:9px;cursor:pointer;transition:all .2s;}
@@ -759,7 +759,13 @@ function renderCreditCard(){
   document.getElementById('creditBooked').textContent = bookedCount;
   document.getElementById('creditRemaining').textContent = state.creditsRemaining;
   const sub = document.getElementById('creditSub');
-  sub.textContent = state.creditsRemaining<=0 ? '你好棒！把堂數都用完，給自己大大的掌聲吧！' : '';
+  if(state.creditsRemaining<=0){
+    sub.textContent = '你好棒！把堂數都用完，給自己大大的掌聲吧！';
+    sub.style.display = 'block';
+  } else {
+    sub.textContent = '';
+    sub.style.display = 'none';
+  }
 }
 
 /* ============ 堂數期限（分頁） ============ */
