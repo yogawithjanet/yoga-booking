@@ -222,6 +222,16 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="announcementOverlay">
+  <div class="modal">
+    <h3 id="announcementTitle"></h3>
+    <p id="announcementBody" style="white-space:pre-wrap;"></p>
+    <div class="modal-actions">
+      <button class="confirm" id="announcementCloseBtn" onclick="closeAnnouncement()" style="width:100%;">我知道了</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============ 外觀主題 ============ */
 const THEMES = {
@@ -317,6 +327,19 @@ async function loadStoreName(){
     state.registrationShowContact = data.registration_show_contact !== false;
     applyTheme(data.theme || 'sage');
   }
+}
+
+async function loadAnnouncement(){
+  // 用獨立查詢，即使資料庫還沒跑 migration（沒有這幾個欄位）也不會影響上面 loadStoreName 的其他資料
+  try{
+    const { data, error } = await db.from('store_settings')
+      .select('announcement_enabled, announcement_title, announcement_content').eq('id', 1).single();
+    if(!error && data){
+      state.announcementEnabled = !!data.announcement_enabled;
+      state.announcementTitle = data.announcement_title || '';
+      state.announcementContent = data.announcement_content || '';
+    }
+  }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
 }
 
 async function loadRegistrationQuestions(){
@@ -518,6 +541,7 @@ async function loadAll(){
   await Promise.all([ loadBookingRules(), loadOverrides() ]); // 產生課表前，要先知道開放區間跟單日調整
   await Promise.all([
     loadStoreName(),
+    loadAnnouncement(),
     loadRegistrationQuestions(),
     loadTemplatesAndSchedule().then(loadSeatsMap),
     ensureMemberAndLoadCredits()
@@ -791,6 +815,16 @@ function openModal(title, body, onConfirm, confirmLabel){
   overlay.classList.add('show');
 }
 function closeModal(){ overlay.classList.remove('show'); pendingAction=null; }
+
+function maybeShowAnnouncement(){
+  if(!state.announcementEnabled || !state.announcementContent) return;
+  document.getElementById('announcementTitle').textContent = state.announcementTitle || '公告';
+  document.getElementById('announcementBody').textContent = state.announcementContent;
+  document.getElementById('announcementOverlay').classList.add('show');
+}
+function closeAnnouncement(){
+  document.getElementById('announcementOverlay').classList.remove('show');
+}
 cancelBtn.addEventListener('click', closeModal);
 overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
 confirmBtn.addEventListener('click', async ()=>{
@@ -935,6 +969,7 @@ function openRegistrationScreen(editing){
 function closeRegistrationScreen(){
   document.getElementById('registrationScreen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  if(!isEditingProfile) maybeShowAnnouncement(); // 只在「新學員剛完成註冊、第一次看到主畫面」時跳公告，編輯個人資料關閉時不要再跳一次
 }
 
 function renderRegistrationForm(editing){
@@ -1040,6 +1075,7 @@ async function submitRegistration(){
     openRegistrationScreen(false);
   } else {
     document.getElementById('app').style.display = 'flex';
+    maybeShowAnnouncement();
   }
 
   if(isDemoMode){
