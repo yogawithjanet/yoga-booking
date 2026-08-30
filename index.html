@@ -152,7 +152,7 @@
   .reg-back span{cursor:pointer;color:var(--sage);font-size:13px;}
   .reg-header{padding:20px 20px 4px;}
   .reg-header h2{margin:0 0 6px;font-size:18px;}
-  .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;}
+  .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;white-space:pre-wrap;}
   .reg-body{padding:16px 20px 28px;}
   .reg-field{margin-bottom:18px;}
   .reg-note{font-size:15px;color:var(--muted);line-height:1.6;white-space:pre-wrap;margin-bottom:18px;}
@@ -337,7 +337,8 @@ let state = {
   registrationShowName: true,      // 表單要不要顯示固定的「姓名」欄位（後台可以關掉，改用自訂問題）
   registrationShowContact: true,   // 表單要不要顯示固定的「e-mail」欄位
   registrationNameRequired: true,  // 姓名是否為必填
-  registrationContactRequired: true // e-mail 是否為必填
+  registrationContactRequired: true, // e-mail 是否為必填
+  editProfileNote: ''               // 後台設定的「編輯我的會員資料」頁面說明文字（選填）
 };
 
 let activeTab = 'book';
@@ -377,11 +378,12 @@ async function loadRegistrationFieldOrder(){
   // 一樣用獨立查詢，避免資料庫還沒跑 migration 時影響到其他資料
   try{
     const { data, error } = await db.from('store_settings')
-      .select('registration_field_order, registration_name_required, registration_contact_required').eq('id', 1).single();
+      .select('registration_field_order, registration_name_required, registration_contact_required, edit_profile_note').eq('id', 1).single();
     if(!error && data){
       if(Array.isArray(data.registration_field_order)) state.registrationFieldOrder = data.registration_field_order;
       state.registrationNameRequired = data.registration_name_required !== false;
       state.registrationContactRequired = data.registration_contact_required !== false;
+      state.editProfileNote = data.edit_profile_note || '';
     }
   }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
 }
@@ -1092,7 +1094,7 @@ function renderRegistrationForm(editing){
     ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（不儲存）</span></div>` : ''}
     <div class="reg-header">
       <h2>${editing ? '編輯我的會員資料' : '會員註冊'}</h2>
-      ${editing ? `<p>確認或修改你的資料，填好後按下面的按鈕儲存。</p>` : ''}
+      ${editing && state.editProfileNote ? `<p>${state.editProfileNote}</p>` : ''}
     </div>
     <div class="reg-body">
       ${computeFrontFieldOrder().map(renderRegistrationFieldHTML).join('')}
