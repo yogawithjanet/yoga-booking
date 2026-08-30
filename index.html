@@ -148,18 +148,19 @@
 
   /* ============ 會員註冊表單 ============ */
   #registrationScreen{width:100%;max-width:430px;min-height:100vh;background:var(--paper);display:none;flex-direction:column;}
+  #registrationContent{min-width:0;}
   .reg-back{padding:14px 20px 0;}
   .reg-back span{cursor:pointer;color:var(--sage);font-size:13px;}
   .reg-header{padding:20px 20px 4px;}
   .reg-header h2{margin:0 0 6px;font-size:18px;}
-  .reg-header p{margin:0;font-size:13px;color:var(--muted);line-height:1.6;white-space:pre-wrap;}
+  .reg-header p{margin:0;font-size:14px;color:var(--muted);line-height:1.6;white-space:pre-wrap;}
   .reg-body{padding:16px 20px 28px;}
   .reg-field{margin-bottom:18px;}
   .reg-note{font-size:15px;color:var(--muted);line-height:1.6;white-space:pre-wrap;margin-bottom:18px;}
   .reg-field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:8px;}
   .reg-field .req{color:var(--danger);margin-left:2px;}
   .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"], .reg-field input[type="date"]{
-    width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+    width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
     font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);
   }
   .reg-choice{display:flex;flex-direction:column;gap:8px;}
@@ -1067,7 +1068,7 @@ function renderRegistrationFieldHTML(key){
   const q = state.registrationQuestions.find(x=>x.id===key.slice(2));
   if(!q) return '';
   if(q.type==='note'){
-    return `<div class="reg-note">${q.question}</div>`;
+    return isEditingProfile ? '' : `<div class="reg-note">${q.question}</div>`;
   }
   const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
   return `
@@ -1093,7 +1094,7 @@ function renderRegistrationForm(editing){
   content.innerHTML = `
     ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（不儲存）</span></div>` : ''}
     <div class="reg-header">
-      <h2>${editing ? '編輯我的會員資料' : '會員註冊'}</h2>
+      <h2>${editing ? '我的會員資料' : '會員註冊'}</h2>
       ${editing && state.editProfileNote ? `<p>${state.editProfileNote}</p>` : ''}
     </div>
     <div class="reg-body">
