@@ -163,6 +163,10 @@
     width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
     font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);
   }
+  .reg-field input[type="date"]{
+    -webkit-min-logical-width:0%; /* iOS Safari 的 date input 有內建最小寬度，會忽略一般的 width/min-width 而超出窄螢幕，要用這個屬性才蓋得掉 */
+    max-width:100%;
+  }
   .reg-choice{display:flex;flex-direction:column;gap:8px;}
   .reg-choice label{
     display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;
