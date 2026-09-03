@@ -291,7 +291,7 @@ function applyTheme(themeName){
 /* ============ Supabase 連線設定（實際數值放在 config.js，不進版控） ============ */
 const SUPABASE_URL = window.APP_CONFIG.SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.APP_CONFIG.SUPABASE_ANON_KEY;
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============ LIFF 設定 ============ */
 const LIFF_ID = window.APP_CONFIG.LIFF_ID;
@@ -308,6 +308,9 @@ async function initLiff(){
     const profile = await liff.getProfile();
     lineProfile = profile;
     isDemoMode = false;
+    db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { 'x-line-user-id': profile.userId } }
+    });
     return true;
   }catch(e){
     console.warn('LIFF 初始化失敗，改用示範模式資料：', e);
@@ -354,44 +357,23 @@ let selectedDateKey = null;
 const WEEKDAY_LABELS = ['日','一','二','三','四','五','六'];
 
 /* ============ 讀取資料 ============ */
-async function loadStoreName(){
-  const { data, error } = await db.from('store_settings')
-    .select('name, theme, registration_form_status, registration_show_name, registration_show_contact').eq('id', 1).single();
+async function loadPublicSettings(){
+  const { data, error } = await db.rpc('get_store_public_settings');
   if(!error && data){
     state.storeName = data.name;
     state.registrationFormStatus = data.registration_form_status || 'draft';
     state.registrationShowName = data.registration_show_name !== false;
     state.registrationShowContact = data.registration_show_contact !== false;
     applyTheme(data.theme || 'sage');
+    state.announcementEnabled = !!data.announcement_enabled;
+    state.announcementTitle = data.announcement_title || '';
+    state.announcementContent = data.announcement_content || '';
+    state.announcementImage = data.announcement_image || '';
+    if(Array.isArray(data.registration_field_order)) state.registrationFieldOrder = data.registration_field_order;
+    state.registrationNameRequired = data.registration_name_required !== false;
+    state.registrationContactRequired = data.registration_contact_required !== false;
+    state.editProfileNote = data.edit_profile_note || '';
   }
-}
-
-async function loadAnnouncement(){
-  // 用獨立查詢，即使資料庫還沒跑 migration（沒有這幾個欄位）也不會影響上面 loadStoreName 的其他資料
-  try{
-    const { data, error } = await db.from('store_settings')
-      .select('announcement_enabled, announcement_title, announcement_content, announcement_image').eq('id', 1).single();
-    if(!error && data){
-      state.announcementEnabled = !!data.announcement_enabled;
-      state.announcementTitle = data.announcement_title || '';
-      state.announcementContent = data.announcement_content || '';
-      state.announcementImage = data.announcement_image || '';
-    }
-  }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
-}
-
-async function loadRegistrationFieldOrder(){
-  // 一樣用獨立查詢，避免資料庫還沒跑 migration 時影響到其他資料
-  try{
-    const { data, error } = await db.from('store_settings')
-      .select('registration_field_order, registration_name_required, registration_contact_required, edit_profile_note').eq('id', 1).single();
-    if(!error && data){
-      if(Array.isArray(data.registration_field_order)) state.registrationFieldOrder = data.registration_field_order;
-      state.registrationNameRequired = data.registration_name_required !== false;
-      state.registrationContactRequired = data.registration_contact_required !== false;
-      state.editProfileNote = data.edit_profile_note || '';
-    }
-  }catch(e){ /* 欄位還沒建立就先跳過，不影響其他功能 */ }
 }
 
 async function loadRegistrationQuestions(){
@@ -401,14 +383,13 @@ async function loadRegistrationQuestions(){
 }
 
 async function loadBookingRules(){
-  const { data, error } = await db.from('notify_settings')
-    .select('booking_window_days, cancel_deadline_minutes, booking_open_start, booking_open_end').eq('id', 1).single();
+  const { data, error } = await db.rpc('get_booking_rules');
   if(!error && data){
     if(data.booking_window_days) state.bookingWindowDays = data.booking_window_days;
     if(data.cancel_deadline_minutes !== null && data.cancel_deadline_minutes !== undefined){
       state.cancelDeadlineMinutes = data.cancel_deadline_minutes;
     }
-    state.bookingOpenStart = data.booking_open_start || null; // 'YYYY-MM-DD' 或 null
+    state.bookingOpenStart = data.booking_open_start || null;
     state.bookingOpenEnd = data.booking_open_end || null;
   }
 }
@@ -501,10 +482,10 @@ function buildSchedule(){
 }
 
 async function loadSeatsMap(){
-  const { data, error } = await db.from('bookings').select('class_key').eq('status', 'active');
+  const { data, error } = await db.rpc('get_class_seat_counts');
   const map = {};
   if(!error && data){
-    data.forEach(row => { map[row.class_key] = (map[row.class_key]||0) + 1; });
+    data.forEach(row => { map[row.class_key] = Number(row.booked_count); });
   }
   state.seatsMap = map;
 }
@@ -590,11 +571,9 @@ async function loadMyCreditBatches(){
 }
 
 async function loadAll(){
-  await Promise.all([ loadBookingRules(), loadOverrides() ]); // 產生課表前，要先知道開放區間跟單日調整
+  await Promise.all([ loadBookingRules(), loadOverrides() ]);
   await Promise.all([
-    loadStoreName(),
-    loadAnnouncement(),
-    loadRegistrationFieldOrder(),
+    loadPublicSettings(),
     loadRegistrationQuestions(),
     loadTemplatesAndSchedule().then(loadSeatsMap),
     ensureMemberAndLoadCredits()
