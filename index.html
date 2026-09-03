@@ -291,7 +291,7 @@ function applyTheme(themeName){
 /* ============ Supabase 連線設定（實際數值放在 config.js，不進版控） ============ */
 const SUPABASE_URL = window.APP_CONFIG.SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.APP_CONFIG.SUPABASE_ANON_KEY;
-let db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============ LIFF 設定 ============ */
 const LIFF_ID = window.APP_CONFIG.LIFF_ID;
@@ -308,9 +308,6 @@ async function initLiff(){
     const profile = await liff.getProfile();
     lineProfile = profile;
     isDemoMode = false;
-    db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { 'x-line-user-id': profile.userId } }
-    });
     return true;
   }catch(e){
     console.warn('LIFF 初始化失敗，改用示範模式資料：', e);
