@@ -715,18 +715,22 @@ function renderMineTab(){
   const mine = state.myBookings
     .filter(b => b.status==='active')
     .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
-    .filter(b => b.cls);
+    .sort((a,b) => (a.class_date_iso||'').localeCompare(b.class_date_iso||'') || (a.class_time||'').localeCompare(b.class_time||''));
 
   if(mine.length===0){
     return `<div class="empty-state"><div class="icon">📭</div><div class="msg">目前沒有已預約的課程<br>去「預約課程」頁面挑一堂喜歡的吧</div></div>`;
   }
   let html = `<div class="day-group"><div class="day-title">已預約課程</div>`;
   mine.forEach(b => {
+    const date = b.cls ? b.cls.date : (b.class_date || '');
+    const time = b.cls ? b.cls.time : (b.class_time || '');
+    const title = b.cls ? b.cls.title : (b.class_title || '');
+    const teacher = b.cls ? b.cls.teacher : (b.teacher || '');
     html += `
       <div class="class-card">
         <div class="class-info">
-          <div class="time">${b.cls.date}　${b.cls.time}</div>
-          <div class="meta"><span>${b.cls.title}</span><span>👤 ${b.cls.teacher}</span></div>
+          <div class="time">${date}　${time}</div>
+          <div class="meta"><span>${title}</span><span>👤 ${teacher}</span></div>
         </div>
         <button class="book-btn cancel" onclick="openCancelModal('${b.id}')">取消</button>
       </div>`;
