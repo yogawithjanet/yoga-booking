@@ -439,11 +439,13 @@ function buildSchedule(){
     const weekdayLabel = WEEKDAY_LABELS[d.getDay()];
     const year = d.getFullYear(), month = d.getMonth()+1, day = d.getDate();
     const dateKey = `${year}-${month}-${day}`;
+    const isoDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const dateStr = `${month}/${day} (週${weekdayLabel})`;
 
     let dayClasses = state.templates
       .filter(t => Array.isArray(t.weekdays) && t.weekdays.includes(weekdayLabel))
-      .filter(t => !cancelSet.has(`${dateKey}_${t.id}`)) // 這天被後台停開的課，不顯示
+      .filter(t => !cancelSet.has(`${dateKey}_${t.id}`))
+      .filter(t => (!t.start_date || isoDate >= t.start_date) && (!t.end_date || isoDate <= t.end_date)) // 這天被後台停開的課，不顯示
       .map(t => ({
         classKey: `${dateKey}_${t.id}`,
         templateId: t.id,
