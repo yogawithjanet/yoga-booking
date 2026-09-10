@@ -420,6 +420,10 @@ function buildSchedule(){
     const key = overrideDateKey(o.date);
     (extrasByDateKey[key] = extrasByDateKey[key] || []).push(o);
   });
+  const modifyMap = {};
+  state.overrides.filter(o=>o.type==='modify').forEach(o=>{
+    modifyMap[`${overrideDateKey(o.date)}_${o.class_template_id}`] = o;
+  });
 
   let rangeStart, rangeEnd;
   if(state.bookingOpenStart && state.bookingOpenEnd){
@@ -446,12 +450,19 @@ function buildSchedule(){
       .filter(t => Array.isArray(t.weekdays) && t.weekdays.includes(weekdayLabel))
       .filter(t => !cancelSet.has(`${dateKey}_${t.id}`))
       .filter(t => (!t.start_date || isoDate >= t.start_date) && (!t.end_date || isoDate <= t.end_date)) // 這天被後台停開的課，不顯示
-      .map(t => ({
-        classKey: `${dateKey}_${t.id}`,
-        templateId: t.id,
-        date: dateStr, dateKey, year, month, day,
-        time: t.time, title: t.title, teacher: t.teacher, cap: t.cap, description: t.description||''
-      }));
+      .map(t => {
+        const mod = modifyMap[`${dateKey}_${t.id}`];
+        return {
+          classKey: `${dateKey}_${t.id}`,
+          templateId: t.id,
+          date: dateStr, dateKey, year, month, day,
+          time: mod ? mod.time : t.time,
+          title: mod ? mod.title : t.title,
+          teacher: mod ? mod.teacher : t.teacher,
+          cap: mod ? mod.cap : t.cap,
+          description: mod ? (mod.description||'') : (t.description||'')
+        };
+      });
 
     // 加入這天後台加開的特別課
     const extras = (extrasByDateKey[dateKey] || []).map(o => ({
