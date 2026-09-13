@@ -1131,7 +1131,7 @@ function renderRegistrationForm(editing){
   document.getElementById('regTopbar').textContent = state.storeName;
   const content = document.getElementById('registrationContent');
   content.innerHTML = `
-    ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（不儲存）</span></div>` : ''}
+    ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（如果有修改資料，記得下方按儲存變更）</span></div>` : ''}
     <div class="reg-header">
       <h2>${editing ? '我的會員資料' : '會員註冊'}</h2>
       ${editing && state.editProfileNote ? `<p>${state.editProfileNote}</p>` : ''}
