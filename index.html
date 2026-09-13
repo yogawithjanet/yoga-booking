@@ -460,6 +460,7 @@ function buildSchedule(){
           title: mod ? mod.title : t.title,
           teacher: mod ? mod.teacher : t.teacher,
           cap: mod ? mod.cap : t.cap,
+          location: mod ? (mod.location||'') : (t.location||''),
           description: mod ? (mod.description||'') : (t.description||'')
         };
       });
@@ -469,7 +470,7 @@ function buildSchedule(){
       classKey: `${dateKey}_extra_${o.id}`,
       templateId: null,
       date: dateStr, dateKey, year, month, day,
-      time: o.time, title: o.title, teacher: o.teacher, cap: o.cap, description: o.description||'',
+      time: o.time, title: o.title, teacher: o.teacher, cap: o.cap, location: o.location||'', description: o.description||'',
       isExtra: true
     }));
     dayClasses = dayClasses.concat(extras).sort((a,b)=>a.time.localeCompare(b.time));
@@ -629,7 +630,7 @@ function classCardHTML(c){
       <div class="class-card">
         <div class="class-info">
           <div class="time">${c.time}　${c.title}</div>
-          <div class="meta"><span>👤 ${c.teacher} 老師</span></div>
+          <div class="meta"><span>👤 ${c.teacher} 老師</span>${c.location ? `<span>📍 ${c.location}</span>` : ''}</div>
           <span class="seat-tag ${tagClass}">${tagText}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
@@ -739,11 +740,12 @@ function renderMineTab(){
     const time = b.cls ? b.cls.time : (b.class_time || '');
     const title = b.cls ? b.cls.title : (b.class_title || '');
     const teacher = b.cls ? b.cls.teacher : (b.teacher || '');
+    const location = b.cls ? (b.cls.location||'') : '';
     html += `
       <div class="class-card">
         <div class="class-info">
           <div class="time">${date}　${time}</div>
-          <div class="meta"><span>${title}</span><span>👤 ${teacher}</span></div>
+          <div class="meta"><span>${title}</span><span>👤 ${teacher}</span>${location ? `<span>📍 ${location}</span>` : ''}</div>
         </div>
         <button class="book-btn cancel" onclick="openCancelModal('${b.id}')">取消</button>
       </div>`;
