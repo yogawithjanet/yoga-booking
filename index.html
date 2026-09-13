@@ -630,7 +630,8 @@ function classCardHTML(c){
       <div class="class-card">
         <div class="class-info">
           <div class="time">${c.time}　${c.title}</div>
-          <div class="meta"><span>👤 ${c.teacher} 老師</span>${c.location ? `<span>📍 ${c.location}</span>` : ''}</div>
+          <div class="meta"><span>👤 ${c.teacher} 老師</span></div>
+          ${c.location ? `<div class="meta"><span>📍 ${c.location}</span></div>` : ''}
           <span class="seat-tag ${tagClass}">${tagText}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
@@ -745,7 +746,8 @@ function renderMineTab(){
       <div class="class-card">
         <div class="class-info">
           <div class="time">${date}　${time}</div>
-          <div class="meta"><span>${title}</span><span>👤 ${teacher}</span>${location ? `<span>📍 ${location}</span>` : ''}</div>
+          <div class="meta"><span>${title}</span><span>👤 ${teacher}</span></div>
+          ${location ? `<div class="meta"><span>📍 ${location}</span></div>` : ''}
         </div>
         <button class="book-btn cancel" onclick="openCancelModal('${b.id}')">取消</button>
       </div>`;
