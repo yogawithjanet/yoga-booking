@@ -824,7 +824,7 @@ function renderCreditExpiryTab(){
 }
 
 function renderAboutTab(){
-  let html = '<div style="padding:8px 0;">';
+  let html = '<div style="padding:8px 24px;">';
   if(state.aboutImage){
     html += `<div style="text-align:center;margin-bottom:16px;"><img src="${state.aboutImage}" style="max-width:100%;border-radius:14px;"></div>`;
   }
@@ -834,7 +834,7 @@ function renderAboutTab(){
   if(state.aboutLinks.length){
     html += '<div style="display:flex;flex-direction:column;gap:10px;">';
     state.aboutLinks.forEach(link=>{
-      html += `<a href="${link.url}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:13px 16px;border-radius:12px;border:1.5px solid var(--sage);color:var(--sage-dark);font-weight:600;font-size:14px;text-decoration:none;transition:background .15s;" onmouseover="this.style.background='var(--sage-light)'" onmouseout="this.style.background='transparent'">${link.label}</a>`;
+      html += `<a href="${link.url}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:13px 16px;border-radius:12px;background:var(--sage);color:#fff;font-weight:600;font-size:14px;text-decoration:none;transition:opacity .15s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">${link.label}</a>`;
     });
     html += '</div>';
   }
