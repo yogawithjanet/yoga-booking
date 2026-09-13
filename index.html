@@ -254,6 +254,17 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="profileReminderOverlay">
+  <div class="modal">
+    <h3>尚未儲存</h3>
+    <p>你有修改過的資料尚未儲存，請記得按下方的「儲存變更」按鈕。</p>
+    <div class="modal-actions">
+      <button class="cancel" onclick="profileReminderLeave()">確定不儲存</button>
+      <button class="confirm" onclick="profileReminderGoSave()">前往最下方按儲存</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="announcementOverlay">
   <div class="modal announcement-modal">
     <button class="announcement-close-x" onclick="closeAnnouncement()" aria-label="關閉">✕</button>
@@ -1067,12 +1078,33 @@ function openRegistrationScreen(editing){
 }
 function closeRegistrationScreen(){
   if(isEditingProfile && profileDirty){
-    if(!confirm('你有修改過的資料尚未儲存，請記得按下方的「儲存變更」按鈕。\n\n確定不儲存就離開嗎？')) return;
+    showProfileSaveReminder();
+    return;
   }
+  doCloseRegistration();
+}
+function doCloseRegistration(){
   document.getElementById('registrationScreen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   profileDirty = false;
   if(!isEditingProfile) maybeShowAnnouncement();
+}
+function showProfileSaveReminder(){
+  const ov = document.getElementById('profileReminderOverlay');
+  ov.classList.add('show');
+}
+function closeProfileReminder(){ document.getElementById('profileReminderOverlay').classList.remove('show'); }
+function profileReminderGoSave(){
+  closeProfileReminder();
+  const body = document.querySelector('.reg-body');
+  if(body){
+    const submit = body.querySelector('.reg-submit');
+    if(submit) submit.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+}
+function profileReminderLeave(){
+  closeProfileReminder();
+  doCloseRegistration();
 }
 
 // 跟後台「computeRegFieldOrder」用同一套邏輯：姓名／e-mail／生日／年紀／其他問題
