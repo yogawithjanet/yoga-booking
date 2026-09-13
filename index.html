@@ -161,11 +161,12 @@
   .reg-field .req{color:var(--danger);margin-left:2px;}
   .reg-field input[type="text"], .reg-field input[type="tel"], .reg-field input[type="email"], .reg-field input[type="date"]{
     width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
-    font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);
+    font-size:14px;font-family:inherit;background:var(--card);color:var(--ink);box-sizing:border-box;
   }
   .reg-field input[type="date"]{
     -webkit-min-logical-width:0%;
     max-width:100%;
+    -webkit-appearance:none;appearance:none;
   }
   .reg-body{overflow:hidden;}
   .reg-choice{display:flex;flex-direction:column;gap:8px;}
@@ -1052,6 +1053,7 @@ async function cancelBooking(bookingId){
 // 他下次打開就會被當成新學員，重新看到這個表單——這是刻意設計成這樣的。
 let isEditingProfile = false;
 let registrationSubmitting = false;
+let profileDirty = false;
 
 function needsRegistration(){
   return state.registrationFormStatus==='published' && !state.registrationSubmittedAt;
@@ -1060,12 +1062,17 @@ function needsRegistration(){
 function openRegistrationScreen(editing){
   document.getElementById('app').style.display = 'none';
   document.getElementById('registrationScreen').style.display = 'flex';
+  profileDirty = false;
   renderRegistrationForm(editing);
 }
 function closeRegistrationScreen(){
+  if(isEditingProfile && profileDirty){
+    if(!confirm('你有修改過的資料尚未儲存，請記得按下方的「儲存變更」按鈕。\n\n確定不儲存就離開嗎？')) return;
+  }
   document.getElementById('registrationScreen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  if(!isEditingProfile) maybeShowAnnouncement(); // 只在「新學員剛完成註冊、第一次看到主畫面」時跳公告，編輯個人資料關閉時不要再跳一次
+  profileDirty = false;
+  if(!isEditingProfile) maybeShowAnnouncement();
 }
 
 // 跟後台「computeRegFieldOrder」用同一套邏輯：姓名／e-mail／生日／年紀／其他問題
@@ -1133,6 +1140,10 @@ function renderRegistrationForm(editing){
       ${computeFrontFieldOrder().map(renderRegistrationFieldHTML).join('')}
       <button class="reg-submit" onclick="submitRegistration()">${editing ? '儲存變更' : '送出'}</button>
     </div>`;
+  if(editing){
+    content.addEventListener('input', ()=>{ profileDirty = true; }, { once: false });
+    content.addEventListener('change', ()=>{ profileDirty = true; }, { once: false });
+  }
 }
 
 async function submitRegistration(){
@@ -1180,6 +1191,7 @@ async function submitRegistration(){
     state.registrationContact = contact;
     state.registrationAnswers = answers;
     state.registrationSubmittedAt = nowIso;
+    profileDirty = false;
 
     const editing = isEditingProfile;
     document.getElementById('registrationContent').innerHTML = `
