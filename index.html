@@ -612,6 +612,14 @@ async function loadAll(){
     ensureMemberAndLoadCredits()
   ]);
   await Promise.all([ loadMyBookings(), loadMyCreditBatches() ]);
+  const todayStr = new Date().toISOString().slice(0,10);
+  const batchRemaining = state.creditBatches
+    .filter(b => b.remaining > 0 && (!b.expires_at || b.expires_at >= todayStr))
+    .reduce((sum, b) => sum + b.remaining, 0);
+  if(batchRemaining !== state.creditsRemaining){
+    state.creditsRemaining = batchRemaining;
+    await db.from('members').update({ remaining_credits: batchRemaining }).eq('line_user_id', lineProfile.userId);
+  }
 }
 
 /* ============ 畫面渲染 ============ */
@@ -749,8 +757,9 @@ function renderBookTab(){
 }
 
 function renderMineTab(){
+  const todayIso = new Date().toISOString().slice(0,10);
   const mine = state.myBookings
-    .filter(b => b.status==='active')
+    .filter(b => b.status==='active' && b.class_date_iso && b.class_date_iso >= todayIso)
     .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
     .sort((a,b) => (a.class_date_iso||'').localeCompare(b.class_date_iso||'') || (a.class_time||'').localeCompare(b.class_time||''));
 
