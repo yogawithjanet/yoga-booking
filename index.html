@@ -613,12 +613,30 @@ async function loadAll(){
   ]);
   await Promise.all([ loadMyBookings(), loadMyCreditBatches() ]);
   const todayStr = new Date().toISOString().slice(0,10);
-  const batchRemaining = state.creditBatches
-    .filter(b => b.remaining > 0 && (!b.expires_at || b.expires_at >= todayStr))
-    .reduce((sum, b) => sum + b.remaining, 0);
-  if(batchRemaining !== state.creditsRemaining){
-    state.creditsRemaining = batchRemaining;
-    await db.from('members').update({ remaining_credits: batchRemaining }).eq('line_user_id', lineProfile.userId);
+  const activeBatches = state.creditBatches.filter(b=>b.amount>0).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const activeBookings = state.myBookings.filter(bk=>bk.status==='active');
+  const batchIds = new Set(activeBatches.map(b=>b.id));
+  const assigned = {};
+  activeBatches.forEach(b=>{ assigned[b.id]=0; });
+  activeBookings.filter(bk=>bk.credit_batch_id && batchIds.has(bk.credit_batch_id))
+    .forEach(bk=>{ assigned[bk.credit_batch_id]++; });
+  const orphans = activeBookings.filter(bk=>!bk.credit_batch_id || !batchIds.has(bk.credit_batch_id));
+  for(const o of orphans){
+    const target = activeBatches.find(b=> b.amount - assigned[b.id] > 0);
+    if(target) assigned[target.id]++;
+  }
+  let totalRemaining = 0;
+  for(const b of activeBatches){
+    const correctRemaining = Math.max(0, b.amount - assigned[b.id]);
+    if(b.remaining !== correctRemaining){
+      await db.from('credit_batches').update({ remaining: correctRemaining }).eq('id', b.id);
+      b.remaining = correctRemaining;
+    }
+    if(!b.expires_at || b.expires_at >= todayStr) totalRemaining += correctRemaining;
+  }
+  if(totalRemaining !== state.creditsRemaining){
+    state.creditsRemaining = totalRemaining;
+    await db.from('members').update({ remaining_credits: totalRemaining }).eq('line_user_id', lineProfile.userId);
   }
 }
 
