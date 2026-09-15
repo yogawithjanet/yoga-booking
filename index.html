@@ -775,7 +775,8 @@ function renderBookTab(){
 }
 
 function renderMineTab(){
-  const todayIso = new Date().toISOString().slice(0,10);
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const mine = state.myBookings
     .filter(b => b.status==='active' && b.class_date_iso && b.class_date_iso >= todayIso)
     .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
