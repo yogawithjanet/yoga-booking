@@ -673,7 +673,9 @@ function classCardHTML(c){
   else if(remain<=3){ tagClass='low'; tagText=`剩 ${remain} 位，快滿囉`; }
 
   let btn;
-  if(hasStarted && !already){
+  if(already && hasStarted){
+    btn = `<button class="book-btn booked" disabled>已完成</button>`;
+  } else if(hasStarted && !already){
     btn = `<button class="book-btn disabled" disabled>已截止</button>`;
   } else if(already){
     btn = `<button class="book-btn booked" disabled>已預約 ✓</button>`;
