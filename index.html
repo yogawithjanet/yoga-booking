@@ -73,6 +73,10 @@
   .mine-sub-tabs{display:flex;gap:8px;margin-bottom:16px;}
   .mine-sub-btn{flex:1;border:1px solid var(--line);background:var(--card);padding:8px 0;border-radius:10px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .2s;}
   .mine-sub-btn.active{background:var(--sage);color:#fff;border-color:var(--sage);}
+  .completed-filter{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px;}
+  .cf-label{font-size:14px;font-weight:600;color:var(--ink);min-width:120px;text-align:center;}
+  .cf-arrow{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:16px;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+  .cf-arrow:active{background:var(--sage-light);}
   .book-btn{border:none;padding:9px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:transform .1s;}
   .book-btn:active{transform:scale(0.96);}
   .book-btn.primary{background:var(--line-green);color:#fff;}
@@ -779,7 +783,15 @@ function renderBookTab(){
 }
 
 let mineSubTab = 'upcoming';
+let completedFilterYear = new Date().getFullYear();
+let completedFilterMonth = new Date().getMonth()+1;
 function padTime(t){ if(!t) return ''; const p=t.split(':'); return p.map(s=>s.padStart(2,'0')).join(':'); }
+function changeCompletedMonth(delta){
+  completedFilterMonth += delta;
+  if(completedFilterMonth<1){ completedFilterMonth=12; completedFilterYear--; }
+  if(completedFilterMonth>12){ completedFilterMonth=1; completedFilterYear++; }
+  render();
+}
 function renderMineTab(){
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
@@ -791,9 +803,13 @@ function renderMineTab(){
   </div>`;
 
   if(mineSubTab==='completed'){
+    const monthStart = `${completedFilterYear}-${String(completedFilterMonth).padStart(2,'0')}-01`;
+    const daysInMonth = new Date(completedFilterYear, completedFilterMonth, 0).getDate();
+    const monthEnd = `${completedFilterYear}-${String(completedFilterMonth).padStart(2,'0')}-${String(daysInMonth).padStart(2,'0')}`;
     const done = state.myBookings
       .filter(b => {
         if(!b.class_date_iso) return false;
+        if(b.class_date_iso < monthStart || b.class_date_iso > monthEnd) return false;
         if(b.status==='completed') return true;
         if(b.status==='active'){
           if(b.class_date_iso < todayIso) return true;
@@ -803,8 +819,13 @@ function renderMineTab(){
       })
       .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
       .sort((a,b) => (b.class_date_iso||'').localeCompare(a.class_date_iso||'') || (b.class_time||'').localeCompare(a.class_time||''));
-    if(done.length===0) return tabsHtml + `<div class="empty-state"><div class="icon">🎉</div><div class="msg">還沒有已完成的課程</div></div>`;
-    let html = tabsHtml + `<div class="day-group">`;
+    const filterHtml = `<div class="completed-filter">
+      <button class="cf-arrow" onclick="changeCompletedMonth(-1)">‹</button>
+      <span class="cf-label">${completedFilterYear} 年 ${completedFilterMonth} 月</span>
+      <button class="cf-arrow" onclick="changeCompletedMonth(1)">›</button>
+    </div>`;
+    if(done.length===0) return tabsHtml + filterHtml + `<div class="empty-state"><div class="icon">📭</div><div class="msg">這個月沒有已完成的課程</div></div>`;
+    let html = tabsHtml + filterHtml + `<div class="day-group">`;
     done.forEach(b => {
       const date = b.cls ? b.cls.date : (b.class_date || '');
       const time = b.cls ? b.cls.time : (b.class_time || '');
