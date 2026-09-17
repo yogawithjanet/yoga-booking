@@ -77,6 +77,14 @@
   .cf-label{font-size:14px;font-weight:600;color:var(--ink);min-width:120px;text-align:center;}
   .cf-arrow{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:16px;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
   .cf-arrow:active{background:var(--sage-light);}
+  .cf-label{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;}
+  .month-picker{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;}
+  .mp-year-row{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:12px;}
+  .mp-year{font-size:15px;font-weight:700;color:var(--ink);min-width:80px;text-align:center;}
+  .mp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .mp-month{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 0;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;transition:all .15s;}
+  .mp-month.active{background:var(--sage);color:#fff;border-color:var(--sage);}
+  .mp-month:active{background:var(--sage-light);}
   .book-btn{border:none;padding:9px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:transform .1s;}
   .book-btn:active{transform:scale(0.96);}
   .book-btn.primary{background:var(--line-green);color:#fff;}
@@ -785,6 +793,7 @@ function renderBookTab(){
 let mineSubTab = 'upcoming';
 let completedFilterYear = new Date().getFullYear();
 let completedFilterMonth = new Date().getMonth()+1;
+let showMonthPicker = false;
 function padTime(t){ if(!t) return ''; const p=t.split(':'); return p.map(s=>s.padStart(2,'0')).join(':'); }
 function changeCompletedMonth(delta){
   completedFilterMonth += delta;
@@ -792,6 +801,9 @@ function changeCompletedMonth(delta){
   if(completedFilterMonth>12){ completedFilterMonth=1; completedFilterYear++; }
   render();
 }
+function toggleMonthPicker(){ showMonthPicker=!showMonthPicker; render(); }
+function pickMonth(m){ completedFilterMonth=m; showMonthPicker=false; render(); }
+function changePickerYear(delta){ completedFilterYear+=delta; render(); }
 function renderMineTab(){
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
@@ -819,11 +831,22 @@ function renderMineTab(){
       })
       .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
       .sort((a,b) => (b.class_date_iso||'').localeCompare(a.class_date_iso||'') || (b.class_time||'').localeCompare(a.class_time||''));
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12];
+    const pickerHtml = showMonthPicker ? `<div class="month-picker">
+      <div class="mp-year-row">
+        <button class="cf-arrow" onclick="changePickerYear(-1)">‹</button>
+        <span class="mp-year">${completedFilterYear} 年</span>
+        <button class="cf-arrow" onclick="changePickerYear(1)">›</button>
+      </div>
+      <div class="mp-grid">${months.map(m=>
+        `<button class="mp-month${m===completedFilterMonth?' active':''}" onclick="pickMonth(${m})">${m} 月</button>`
+      ).join('')}</div>
+    </div>` : '';
     const filterHtml = `<div class="completed-filter">
       <button class="cf-arrow" onclick="changeCompletedMonth(-1)">‹</button>
-      <span class="cf-label">${completedFilterYear} 年 ${completedFilterMonth} 月</span>
+      <span class="cf-label" onclick="toggleMonthPicker()">${completedFilterYear} 年 ${completedFilterMonth} 月</span>
       <button class="cf-arrow" onclick="changeCompletedMonth(1)">›</button>
-    </div>`;
+    </div>${pickerHtml}`;
     if(done.length===0) return tabsHtml + filterHtml + `<div class="empty-state"><div class="icon">📭</div><div class="msg">這個月沒有已完成的課程</div></div>`;
     let html = tabsHtml + filterHtml + `<div class="day-group">`;
     done.forEach(b => {
