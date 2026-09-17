@@ -70,6 +70,9 @@
   .seat-tag.low{background:var(--clay-light);color:var(--clay);}
   .seat-tag.full{background:#f3e4e0;color:var(--danger);}
 
+  .mine-sub-tabs{display:flex;gap:8px;margin-bottom:16px;}
+  .mine-sub-btn{flex:1;border:1px solid var(--line);background:var(--card);padding:8px 0;border-radius:10px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .2s;}
+  .mine-sub-btn.active{background:var(--sage);color:#fff;border-color:var(--sage);}
   .book-btn{border:none;padding:9px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:transform .1s;}
   .book-btn:active{transform:scale(0.96);}
   .book-btn.primary{background:var(--line-green);color:#fff;}
@@ -612,15 +615,16 @@ async function loadAll(){
     ensureMemberAndLoadCredits()
   ]);
   await Promise.all([ loadMyBookings(), loadMyCreditBatches() ]);
-  const todayStr = new Date().toISOString().slice(0,10);
+  const _n = new Date();
+  const todayStr = `${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;
   const activeBatches = state.creditBatches.filter(b=>b.amount>0).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  const activeBookings = state.myBookings.filter(bk=>bk.status==='active');
+  const usedBookings = state.myBookings.filter(bk=>bk.status==='active'||bk.status==='completed');
   const batchIds = new Set(activeBatches.map(b=>b.id));
   const assigned = {};
   activeBatches.forEach(b=>{ assigned[b.id]=0; });
-  activeBookings.filter(bk=>bk.credit_batch_id && batchIds.has(bk.credit_batch_id))
+  usedBookings.filter(bk=>bk.credit_batch_id && batchIds.has(bk.credit_batch_id))
     .forEach(bk=>{ assigned[bk.credit_batch_id]++; });
-  const orphans = activeBookings.filter(bk=>!bk.credit_batch_id || !batchIds.has(bk.credit_batch_id));
+  const orphans = usedBookings.filter(bk=>!bk.credit_batch_id || !batchIds.has(bk.credit_batch_id));
   for(const o of orphans){
     const target = activeBatches.find(b=> b.amount - assigned[b.id] > 0);
     if(target) assigned[target.id]++;
@@ -774,18 +778,64 @@ function renderBookTab(){
   return html;
 }
 
+let mineSubTab = 'upcoming';
+function padTime(t){ if(!t) return ''; const p=t.split(':'); return p.map(s=>s.padStart(2,'0')).join(':'); }
 function renderMineTab(){
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const nowTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  const tabsHtml = `<div class="mine-sub-tabs">
+    <button class="mine-sub-btn${mineSubTab==='upcoming'?' active':''}" onclick="mineSubTab='upcoming';render()">已預約課程</button>
+    <button class="mine-sub-btn${mineSubTab==='completed'?' active':''}" onclick="mineSubTab='completed';render()">已完成課程</button>
+  </div>`;
+
+  if(mineSubTab==='completed'){
+    const done = state.myBookings
+      .filter(b => {
+        if(!b.class_date_iso) return false;
+        if(b.status==='completed') return true;
+        if(b.status==='active'){
+          if(b.class_date_iso < todayIso) return true;
+          if(b.class_date_iso === todayIso && padTime(b.class_time) < nowTime) return true;
+        }
+        return false;
+      })
+      .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
+      .sort((a,b) => (b.class_date_iso||'').localeCompare(a.class_date_iso||'') || (b.class_time||'').localeCompare(a.class_time||''));
+    if(done.length===0) return tabsHtml + `<div class="empty-state"><div class="icon">🎉</div><div class="msg">還沒有已完成的課程</div></div>`;
+    let html = tabsHtml + `<div class="day-group">`;
+    done.forEach(b => {
+      const date = b.cls ? b.cls.date : (b.class_date || '');
+      const time = b.cls ? b.cls.time : (b.class_time || '');
+      const title = b.cls ? b.cls.title : (b.class_title || '');
+      const teacher = b.cls ? b.cls.teacher : (b.teacher || '');
+      const location = b.cls ? (b.cls.location||'') : '';
+      html += `
+        <div class="class-card" style="margin-bottom:10px;">
+          <div class="class-info">
+            <div class="time">${date}　${time}</div>
+            <div class="time">${title}</div>
+            <div class="meta"><span>👤 ${teacher} 老師</span></div>
+            ${location ? `<div class="meta"><span>📍${location}</span></div>` : ''}
+          </div>
+          <span class="book-btn booked" style="cursor:default;">已完成</span>
+        </div>`;
+    });
+    return html + `</div>`;
+  }
+
   const mine = state.myBookings
-    .filter(b => b.status==='active' && b.class_date_iso && b.class_date_iso >= todayIso)
+    .filter(b => {
+      if(b.status!=='active' || !b.class_date_iso) return false;
+      if(b.class_date_iso > todayIso) return true;
+      if(b.class_date_iso < todayIso) return false;
+      return padTime(b.class_time) >= nowTime;
+    })
     .map(b => ({ ...b, cls: state.allClasses.find(c => c.classKey===b.class_key) }))
     .sort((a,b) => (a.class_date_iso||'').localeCompare(b.class_date_iso||'') || (a.class_time||'').localeCompare(b.class_time||''));
-
-  if(mine.length===0){
-    return `<div class="empty-state"><div class="icon">📭</div><div class="msg">目前沒有已預約的課程<br>去「預約課程」頁面挑一堂喜歡的吧</div></div>`;
-  }
-  let html = `<div class="day-group"><div class="day-title">已預約課程</div>`;
+  if(mine.length===0) return tabsHtml + `<div class="empty-state"><div class="icon">📭</div><div class="msg">目前沒有已預約的課程<br>去「預約課程」頁面挑一堂喜歡的吧</div></div>`;
+  let html = tabsHtml + `<div class="day-group">`;
   mine.forEach(b => {
     const date = b.cls ? b.cls.date : (b.class_date || '');
     const time = b.cls ? b.cls.time : (b.class_time || '');
@@ -803,8 +853,7 @@ function renderMineTab(){
         <button class="book-btn cancel" onclick="openCancelModal('${b.id}')">取消</button>
       </div>`;
   });
-  html += `</div>`;
-  return html;
+  return html + `</div>`;
 }
 
 function renderHistoryTab(){
