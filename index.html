@@ -1369,6 +1369,24 @@ async function submitRegistration(){
 (async function init(){
   try{
     await initLiff();
+  }catch(e){
+    console.error('LIFF 初始化失敗：', e);
+  }
+
+  if(isDemoMode){
+    document.getElementById('loadingScreen').style.display = 'none';
+    const block = document.createElement('div');
+    block.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:32px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    block.innerHTML = `
+      <div style="font-size:48px;margin-bottom:16px;">💬</div>
+      <div style="font-size:18px;font-weight:700;color:#2d2a26;margin-bottom:8px;">請從 LINE 開啟</div>
+      <div style="font-size:14px;color:#8a8578;line-height:1.6;">這個預約系統需要透過 LINE 登入<br>請回到 LINE 聊天室，點擊預約連結開啟</div>
+    `;
+    document.body.appendChild(block);
+    return;
+  }
+
+  try{
     await loadAll();
     render();
   }catch(e){
@@ -1387,13 +1405,6 @@ async function submitRegistration(){
   } else {
     document.getElementById('app').style.display = 'flex';
     maybeShowAnnouncement();
-  }
-
-  if(isDemoMode){
-    const badge = document.createElement('div');
-    badge.textContent = '⚠️ 示範模式（未偵測到 LINE 環境，顯示測試資料）';
-    badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c1503a;color:#fff;font-size:11px;text-align:center;padding:4px;z-index:99;';
-    document.body.prepend(badge);
   }
 })();
 </script>
