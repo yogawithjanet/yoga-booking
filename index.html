@@ -328,12 +328,24 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const LIFF_ID = window.APP_CONFIG.LIFF_ID;
 let lineProfile = { userId: 'demo-user', displayName: '王小美', pictureUrl: null };
 let isDemoMode = true;
+let loginRedirecting = false; // 正在前往 LINE 登入，不要顯示「請從 LINE 開啟」
 
 async function initLiff(){
   try{
     await liff.init({ liffId: LIFF_ID });
     if(!liff.isLoggedIn()){
-      liff.login();
+      // 不在 LINE App 裡（Safari / Chrome，或在聊天室直接點 GitHub Pages 網址）時，liff.login() 會開 LINE「網頁版登入」
+      // （要輸入 email / 密碼或掃 QR code），學生會以為卡在登入頁。手機上改用 LIFF 網址讓 LINE App 接手並自動登入；
+      // 只在電腦上才用網頁登入。sessionStorage 記號避免來回跳轉。
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      let alreadyTried = false;
+      try{ alreadyTried = sessionStorage.getItem('liffOpenInApp') === '1'; sessionStorage.setItem('liffOpenInApp', '1'); }catch(_){}
+      if(isMobile && !liff.isInClient() && !alreadyTried){
+        location.href = `https://liff.line.me/${LIFF_ID}`;
+      } else {
+        liff.login({ redirectUri: location.href });
+      }
+      loginRedirecting = true;
       return false;
     }
     const profile = await liff.getProfile();
@@ -1373,6 +1385,7 @@ async function submitRegistration(){
     console.error('LIFF 初始化失敗：', e);
   }
 
+  if(loginRedirecting) return; // 保持載入畫面，等待跳轉到 LINE
   if(isDemoMode){
     document.getElementById('loadingScreen').style.display = 'none';
     const block = document.createElement('div');
@@ -1381,6 +1394,7 @@ async function submitRegistration(){
       <div style="font-size:48px;margin-bottom:16px;">💬</div>
       <div style="font-size:18px;font-weight:700;color:#2d2a26;margin-bottom:8px;">請從 LINE 開啟</div>
       <div style="font-size:14px;color:#8a8578;line-height:1.6;">這個預約系統需要透過 LINE 登入<br>請回到 LINE 聊天室，點擊預約連結開啟</div>
+      <a href="https://liff.line.me/${LIFF_ID}" style="margin-top:18px;display:inline-block;background:#06C755;color:#fff;padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;">用 LINE 開啟</a>
     `;
     document.body.appendChild(block);
     return;
