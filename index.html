@@ -5,45 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>團課預約</title>
 <script src="https://static.line-scdn.net/liff/edge/2.1/sdk.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
-<script>
-/* 前台 / 後台共用的小工具（前台與後台 index.html 各有一份相同內容，修改時請同步）。
- * 所有動態資料放進 innerHTML 前都要經過 esc()；放進 href / src 前經過 safeUrl()；
- * 放進 onclick="fn(...)" 的字串參數用 jsArg()。 */
-(function(global){
-  const HTML_ESCAPES = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;', '`':'&#96;' };
-  function esc(v){
-    if(v === null || v === undefined) return '';
-    return String(v).replace(/[&<>"'`]/g, c => HTML_ESCAPES[c]);
-  }
-  // 只允許 http(s)、mailto、tel、line 協定，以及圖片的 data:image；其他（javascript: 等）一律變成 '#'
-  function safeUrl(v, { allowDataImage = false } = {}){
-    const s = String(v || '').trim();
-    if(!s) return '';
-    if(allowDataImage && /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(s)) return esc(s);
-    if(/^(https?:|mailto:|tel:|line:)/i.test(s)) return esc(s);
-    if(/^\/(?!\/)/.test(s)) return esc(s);
-    return '#';
-  }
-  // onclick 屬性裡的字串參數：先 JSON 化再 HTML 跳脫，瀏覽器解析屬性後還原成合法的 JS 字串字面值
-  function jsArg(v){ return esc(JSON.stringify(v === undefined ? null : v)); }
-  // 本地（台北）日期 YYYY-MM-DD；不要用 toISOString()，那是 UTC，台北 00:00–07:59 會差一天
-  function localISO(d = new Date(), offsetDays = 0){
-    const x = new Date(d.getTime()); x.setDate(x.getDate() + offsetDays);
-    return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
-  }
-  // class_key 使用的不補零日期：2026-9-29
-  function isoToDateKey(iso){ const [y,m,d] = String(iso).split('-').map(Number); return `${y}-${m}-${d}`; }
-  // Supabase RPC 錯誤轉成給使用者看的訊息（RPC 內 raise exception 的中文訊息直接顯示）
-  function rpcErrorMessage(error, fallback){
-    if(!error) return fallback || '';
-    if(error.code === '42501') return '權限不足，請重新登入';
-    return (error.message && /[一-鿿]/.test(error.message)) ? error.message : (fallback || '操作失敗，請稍後再試');
-  }
-  global.AppUtil = { esc, safeUrl, jsArg, localISO, isoToDateKey, rpcErrorMessage };
-})(typeof window !== 'undefined' ? window : globalThis);
-</script>
 <style>
   :root{
     --line-green:#06C755;
@@ -357,58 +320,28 @@ function applyTheme(themeName){
 }
 
 /* ============ Supabase 連線設定（實際數值放在 config.js，不進版控） ============ */
-const { esc, safeUrl, localISO, rpcErrorMessage } = window.AppUtil;
 const SUPABASE_URL = window.APP_CONFIG.SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.APP_CONFIG.SUPABASE_ANON_KEY;
-const LINE_AUTH_URL = window.APP_CONFIG.LINE_AUTH_URL || `${SUPABASE_URL}/functions/v1/line-auth`;
-// 登入前只能呼叫公開 RPC；LINE 身分經伺服器驗證後，換成帶學員身分（line_user_id）的 client。
-// 堂數 / 預約的所有寫入都在資料庫 RPC 內以單一交易完成，前端不再直接改表。
-let db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============ LIFF 設定 ============ */
 const LIFF_ID = window.APP_CONFIG.LIFF_ID;
 let lineProfile = { userId: 'demo-user', displayName: '王小美', pictureUrl: null };
 let isDemoMode = true;
-let authErrorMessage = '';
-let loginRedirecting = false; // 正在前往 LINE 登入，不要顯示「請從 LINE 開啟」
 
 async function initLiff(){
   try{
     await liff.init({ liffId: LIFF_ID });
     if(!liff.isLoggedIn()){
-      // 不在 LINE App 裡（Safari / Chrome，或在聊天室直接點 GitHub Pages 網址）時，liff.login() 會開 LINE「網頁版登入」
-      // （要輸入 email / 密碼或掃 QR code），學生會以為卡在登入頁。手機上改用 LIFF 網址讓 LINE App 接手並自動登入；
-      // 只在電腦上才用網頁登入。sessionStorage 記號避免來回跳轉。
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      let alreadyTried = false;
-      try{ alreadyTried = sessionStorage.getItem('liffOpenInApp') === '1'; sessionStorage.setItem('liffOpenInApp', '1'); }catch(_){}
-      if(isMobile && !liff.isInClient() && !alreadyTried){
-        location.href = `https://liff.line.me/${LIFF_ID}`;
-      } else {
-        liff.login({ redirectUri: location.href });
-      }
-      loginRedirecting = true;
+      liff.login();
       return false;
     }
-    const idToken = liff.getIDToken();
-    if(!idToken) throw new Error('取不到 LINE ID token（LIFF 的 scope 需要勾選 openid）');
-    const res = await fetch(LINE_AUTH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ idToken })
-    });
-    if(!res.ok) throw new Error(`LINE 身分驗證失敗（${res.status}）`);
-    const session = await res.json();
-    db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${session.accessToken}` } }
-    });
-    lineProfile = session.profile;   // 以伺服器驗證過的 LINE 資料為準
+    const profile = await liff.getProfile();
+    lineProfile = profile;
     isDemoMode = false;
     return true;
   }catch(e){
-    console.warn('LIFF / LINE 身分驗證失敗：', e);
-    authErrorMessage = e && e.message ? e.message : '';
+    console.warn('LIFF 初始化失敗，改用示範模式資料：', e);
     isDemoMode = true;
     return false;
   }
@@ -559,7 +492,6 @@ function buildSchedule(){
         return {
           classKey: `${dateKey}_${t.id}`,
           templateId: t.id,
-          isoDate,
           date: dateStr, dateKey, year, month, day,
           time: mod ? mod.time : t.time,
           title: mod ? mod.title : t.title,
@@ -574,8 +506,6 @@ function buildSchedule(){
     const extras = (extrasByDateKey[dateKey] || []).map(o => ({
       classKey: `${dateKey}_extra_${o.id}`,
       templateId: null,
-      extraId: o.id,
-      isoDate,
       date: dateStr, dateKey, year, month, day,
       time: o.time, title: o.title, teacher: o.teacher, cap: o.cap, location: o.location||'', description: o.description||'',
       isExtra: true
@@ -608,23 +538,84 @@ async function loadSeatsMap(){
   state.seatsMap = map;
 }
 
-/* ============ 學員帳戶（堂數 / 預約 / 批次 都由伺服器計算） ============ */
-// 以前這裡有 sweepExpiredCredits / consumeOneCredit / refundOneCredit / loadAll 內的三方校正，
-// 會直接改寫資料庫、而且會把後台手動扣掉的堂數加回來（堂數會被改寫、UTC 日期、多份數字互相覆寫）。現在全部移到資料庫：
-//   可用堂數 = 未過期批次的剩餘加總（台北時間判斷），預約 / 取消都在 RPC 內單一交易完成。
-async function loadMyAccount(){
-  const { data, error } = await db.rpc('get_my_account');
-  if(error) throw error;
-  const m = data.member || {};
-  const c = data.credits || {};
-  state.creditsRemaining = c.available || 0;
-  state.creditsTotal = c.purchased || 0;
-  state.registrationSubmittedAt = m.registration_submitted_at || null;
-  state.registrationName = m.registration_name || '';
-  state.registrationContact = m.registration_contact || '';
-  state.registrationAnswers = m.registration_answers || {};
-  state.myBookings = Array.isArray(data.bookings) ? data.bookings : [];
-  state.creditBatches = Array.isArray(data.batches) ? data.batches : [];
+/* ============ 堂數批次系統（每批各自效期） ============ */
+async function sweepExpiredCredits(lineUserId){
+  const todayStr = new Date().toISOString().slice(0,10);
+  const { data: expired, error } = await db.from('credit_batches')
+    .select('id, remaining')
+    .eq('line_user_id', lineUserId)
+    .gt('remaining', 0)
+    .not('expires_at', 'is', null)
+    .lt('expires_at', todayStr);
+  if(error || !expired || expired.length===0) return;
+
+  const totalExpired = expired.reduce((s,b)=>s+b.remaining, 0);
+  if(totalExpired<=0) return;
+
+  await db.from('credit_batches').update({ remaining: 0 }).in('id', expired.map(b=>b.id));
+
+  const { data: m } = await db.from('members').select('remaining_credits').eq('line_user_id', lineUserId).single();
+  const newRemaining = Math.max(0, (m ? m.remaining_credits : 0) - totalExpired);
+  await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineUserId);
+}
+
+async function consumeOneCredit(lineUserId){
+  // 依效期排序（最快到期的先扣），找出可以扣的那一批
+  const { data: batches, error } = await db.from('credit_batches')
+    .select('id, remaining, expires_at')
+    .eq('line_user_id', lineUserId)
+    .gt('remaining', 0)
+    .order('expires_at', { ascending: true, nullsFirst: false });
+  if(error || !batches || batches.length===0) return null; // 找不到批次（舊資料），呼叫端會退回直接扣 members 總數
+
+  const batch = batches[0];
+  await db.from('credit_batches').update({ remaining: batch.remaining - 1 }).eq('id', batch.id);
+  return batch.id;
+}
+
+async function refundOneCredit(lineUserId, batchId){
+  if(!batchId) return;
+  const { data: batch } = await db.from('credit_batches').select('remaining').eq('id', batchId).single();
+  if(batch){
+    await db.from('credit_batches').update({ remaining: batch.remaining + 1 }).eq('id', batchId);
+  }
+}
+
+async function ensureMemberAndLoadCredits(){
+  // 確保這個 LINE 使用者在 members 表裡有一筆資料（沒有的話建立），並同步最新的姓名、頭貼
+  await db.from('members').upsert(
+    { line_user_id: lineProfile.userId, display_name: lineProfile.displayName, picture_url: lineProfile.pictureUrl || null },
+    { onConflict: 'line_user_id' }
+  );
+
+  await sweepExpiredCredits(lineProfile.userId); // 先把過期的批次歸零、同步扣掉總數
+
+  const { data, error } = await db.from('members')
+    .select('remaining_credits, total_credits, registration_submitted_at, registration_name, registration_contact, registration_answers')
+    .eq('line_user_id', lineProfile.userId).single();
+
+  state.creditsRemaining = (!error && data) ? data.remaining_credits : 0;
+  state.creditsTotal = (!error && data) ? (data.total_credits || 0) : 0;
+  state.registrationSubmittedAt = (!error && data) ? data.registration_submitted_at : null;
+  state.registrationName = (!error && data && data.registration_name) || '';
+  state.registrationContact = (!error && data && data.registration_contact) || '';
+  state.registrationAnswers = (!error && data && data.registration_answers) || {};
+}
+
+async function loadMyBookings(){
+  const { data, error } = await db.from('bookings')
+    .select('*')
+    .eq('line_user_id', lineProfile.userId)
+    .order('created_at', { ascending: false });
+  state.myBookings = (!error && data) ? data : [];
+}
+
+async function loadMyCreditBatches(){
+  const { data, error } = await db.from('credit_batches')
+    .select('*')
+    .eq('line_user_id', lineProfile.userId)
+    .order('expires_at', { ascending: true, nullsFirst: false });
+  state.creditBatches = (!error && data) ? data : [];
 }
 
 async function loadAll(){
@@ -633,8 +624,36 @@ async function loadAll(){
     loadPublicSettings(),
     loadRegistrationQuestions(),
     loadTemplatesAndSchedule().then(loadSeatsMap),
-    loadMyAccount()
+    ensureMemberAndLoadCredits()
   ]);
+  await Promise.all([ loadMyBookings(), loadMyCreditBatches() ]);
+  const _n = new Date();
+  const todayStr = `${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;
+  const activeBatches = state.creditBatches.filter(b=>b.amount>0).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const usedBookings = state.myBookings.filter(bk=>bk.status==='active'||bk.status==='completed');
+  const batchIds = new Set(activeBatches.map(b=>b.id));
+  const assigned = {};
+  activeBatches.forEach(b=>{ assigned[b.id]=0; });
+  usedBookings.filter(bk=>bk.credit_batch_id && batchIds.has(bk.credit_batch_id))
+    .forEach(bk=>{ assigned[bk.credit_batch_id]++; });
+  const orphans = usedBookings.filter(bk=>!bk.credit_batch_id || !batchIds.has(bk.credit_batch_id));
+  for(const o of orphans){
+    const target = activeBatches.find(b=> b.amount - assigned[b.id] > 0);
+    if(target) assigned[target.id]++;
+  }
+  let totalRemaining = 0;
+  for(const b of activeBatches){
+    const correctRemaining = Math.max(0, b.amount - assigned[b.id]);
+    if(b.remaining !== correctRemaining){
+      await db.from('credit_batches').update({ remaining: correctRemaining }).eq('id', b.id);
+      b.remaining = correctRemaining;
+    }
+    if(!b.expires_at || b.expires_at >= todayStr) totalRemaining += correctRemaining;
+  }
+  if(totalRemaining !== state.creditsRemaining){
+    state.creditsRemaining = totalRemaining;
+    await db.from('members').update({ remaining_credits: totalRemaining }).eq('line_user_id', lineProfile.userId);
+  }
 }
 
 /* ============ 畫面渲染 ============ */
@@ -676,9 +695,9 @@ function classCardHTML(c){
     <div class="class-card-wrap">
       <div class="class-card">
         <div class="class-info">
-          <div class="time">${esc(c.time)}　${esc(c.title)}</div>
-          <div class="meta"><span>👤 ${esc(c.teacher)} 老師</span></div>
-          ${c.location ? `<div class="meta"><span>📍${esc(c.location)}</span></div>` : ''}
+          <div class="time">${c.time}　${c.title}</div>
+          <div class="meta"><span>👤 ${c.teacher} 老師</span></div>
+          ${c.location ? `<div class="meta"><span>📍${c.location}</span></div>` : ''}
           <span class="seat-tag ${tagClass}">${tagText}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
@@ -686,7 +705,7 @@ function classCardHTML(c){
           ${infoBtn}
         </div>
       </div>
-      ${c.description ? `<div class="class-desc" id="desc-${esc(c.classKey)}">${esc(c.description)}</div>` : ''}
+      ${c.description ? `<div class="class-desc" id="desc-${c.classKey}">${c.description}</div>` : ''}
     </div>`;
 }
 
@@ -763,7 +782,7 @@ function renderBookTab(){
     html += `<div class="empty-state small"><div class="icon">🗓️</div><div class="msg">請在上方行事曆選擇一個日期</div></div>`;
     return html;
   }
-  html += `<div class="day-group"><div class="day-title-row"><span class="day-title">${esc(day.dateStr)}</span></div>`;
+  html += `<div class="day-group"><div class="day-title-row"><span class="day-title">${day.dateStr}</span></div>`;
   if(day.classes.length===0){
     html += `<div class="empty-state small"><div class="icon">🧘‍♀️</div><div class="msg">這天沒有開課，換個日期看看吧</div></div>`;
   } else {
@@ -841,10 +860,10 @@ function renderMineTab(){
       html += `
         <div class="class-card" style="margin-bottom:10px;">
           <div class="class-info">
-            <div class="time">${esc(date)}　${esc(time)}</div>
-            <div class="time">${esc(title)}</div>
-            <div class="meta"><span>👤 ${esc(teacher)} 老師</span></div>
-            ${location ? `<div class="meta"><span>📍${esc(location)}</span></div>` : ''}
+            <div class="time">${date}　${time}</div>
+            <div class="time">${title}</div>
+            <div class="meta"><span>👤 ${teacher} 老師</span></div>
+            ${location ? `<div class="meta"><span>📍${location}</span></div>` : ''}
           </div>
           <span class="book-btn booked" style="cursor:default;">已完成</span>
         </div>`;
@@ -872,10 +891,10 @@ function renderMineTab(){
     html += `
       <div class="class-card" style="margin-bottom:10px;">
         <div class="class-info">
-          <div class="time">${esc(date)}　${esc(time)}</div>
-          <div class="time">${esc(title)}</div>
-          <div class="meta"><span>👤 ${esc(teacher)} 老師</span></div>
-          ${location ? `<div class="meta"><span>📍${esc(location)}</span></div>` : ''}
+          <div class="time">${date}　${time}</div>
+          <div class="time">${title}</div>
+          <div class="meta"><span>👤 ${teacher} 老師</span></div>
+          ${location ? `<div class="meta"><span>📍${location}</span></div>` : ''}
         </div>
         <button class="book-btn cancel" onclick="openCancelModal('${b.id}')">取消</button>
       </div>`;
@@ -893,8 +912,8 @@ function renderHistoryTab(){
     html += `
       <div class="history-item">
         <div>
-          <div>${isCancelled ? '取消' : '預約'}「${esc(b.class_title)}」</div>
-          <div class="h-date">${esc(b.class_date)} ${esc(b.class_time)}</div>
+          <div>${isCancelled ? '取消' : '預約'}「${b.class_title}」</div>
+          <div class="h-date">${b.class_date} ${b.class_time}</div>
         </div>
         <div class="h-type ${isCancelled?'plus':'minus'}">${isCancelled?'+1':'-1'} 堂</div>
       </div>`;
@@ -904,7 +923,7 @@ function renderHistoryTab(){
 }
 
 function renderCreditCard(){
-  const todayIso = localISO();
+  const todayIso = new Date().toISOString().slice(0,10);
   const bookedCount = state.myBookings.filter(b => b.status==='active' && b.class_date_iso && b.class_date_iso >= todayIso).length;
   document.getElementById('creditBooked').textContent = bookedCount;
   document.getElementById('creditRemaining').textContent = state.creditsRemaining;
@@ -923,7 +942,7 @@ function renderCreditExpiryTab(){
   if(state.creditBatches.length===0){
     return `<div class="empty-state"><div class="icon">🗓️</div><div class="msg">目前沒有堂數紀錄</div></div>`;
   }
-  const todayStr = localISO();
+  const todayStr = new Date().toISOString().slice(0,10);
   let html = `<div class="day-group"><div class="day-title">堂數期限</div>`;
   state.creditBatches.forEach(b=>{
     const isExpired = b.expires_at && b.expires_at < todayStr;
@@ -933,10 +952,10 @@ function renderCreditExpiryTab(){
     html += `
       <div class="history-item">
         <div>
-          <div class="h-type">新增 ${Number(b.amount)} 堂</div>
-          <div class="h-date">${esc(expiryLabel)}</div>
+          <div class="h-type">新增 ${b.amount} 堂</div>
+          <div class="h-date">${expiryLabel}</div>
         </div>
-        <div class="h-type ${isExpired ? 'minus' : 'plus'}">剩 ${Number(b.remaining)} 堂</div>
+        <div class="h-type ${isExpired ? '' : 'plus'}" ${isExpired ? 'style="color:var(--muted)"' : ''}>剩 ${b.remaining} 堂</div>
       </div>`;
   });
   html += `</div>`;
@@ -946,15 +965,15 @@ function renderCreditExpiryTab(){
 function renderAboutTab(){
   let html = '<div style="padding:8px 24px;">';
   if(state.aboutImage){
-    html += `<div style="text-align:center;margin-bottom:16px;"><img src="${safeUrl(state.aboutImage, { allowDataImage: true })}" style="max-width:100%;border-radius:14px;"></div>`;
+    html += `<div style="text-align:center;margin-bottom:16px;"><img src="${state.aboutImage}" style="max-width:100%;border-radius:14px;"></div>`;
   }
   if(state.aboutText){
-    html += `<div style="font-size:14px;line-height:1.8;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;">${esc(state.aboutText)}</div>`;
+    html += `<div style="font-size:14px;line-height:1.8;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;">${state.aboutText}</div>`;
   }
   if(state.aboutLinks.length){
     html += '<div style="display:flex;flex-direction:column;gap:10px;">';
     state.aboutLinks.forEach(link=>{
-      html += `<a href="${safeUrl(link.url)}" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;padding:13px 16px;border-radius:12px;background:var(--sage);color:#fff;font-weight:600;font-size:14px;text-decoration:none;transition:opacity .15s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">${esc(link.label)}</a>`;
+      html += `<a href="${link.url}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:13px 16px;border-radius:12px;background:var(--sage);color:#fff;font-weight:600;font-size:14px;text-decoration:none;transition:opacity .15s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">${link.label}</a>`;
     });
     html += '</div>';
   }
@@ -969,7 +988,7 @@ function renderUserInfo(){
   document.getElementById('userName').textContent = lineProfile.displayName;
   const avatarEl = document.getElementById('userAvatar');
   if(lineProfile.pictureUrl){
-    avatarEl.style.backgroundImage = `url(${JSON.stringify(String(lineProfile.pictureUrl))})`;
+    avatarEl.style.backgroundImage = `url(${lineProfile.pictureUrl})`;
     avatarEl.style.backgroundSize = 'cover';
     avatarEl.style.backgroundPosition = 'center';
     avatarEl.textContent = '';
@@ -1094,39 +1113,73 @@ async function bookClass(c){
   if(isProcessingBooking){ return; }
   isProcessingBooking = true;
   try{
-    // 前端先做一次檢查只是為了即時提示；真正的規則（已開始、開放區間、額滿、堂數、效期、重複）由 book_class RPC 決定
     const classStart = new Date(c.year, c.month-1, c.day, ...c.time.split(':').map(Number));
     if(classStart <= new Date()){ showToast('這堂課已經開始，無法預約'); return; }
     if(state.creditsRemaining<=0){ showToast('堂數不足，請先加購'); return; }
     if(seatsBooked(c.classKey) >= c.cap){ showToast('此堂課已額滿'); return; }
     if(state.myBookings.some(b=>b.class_key===c.classKey && b.status==='active')){ showToast('已經預約過這堂課囉'); return; }
 
-    const args = c.extraId ? { p_extra_id: c.extraId } : { p_template_id: c.templateId, p_date: c.isoDate };
-    const { error } = await db.rpc('book_class', args);
-    await Promise.all([loadSeatsMap(), loadMyAccount()]);
+    const batchId = await consumeOneCredit(lineProfile.userId);
+    const newRemaining = state.creditsRemaining - 1;
+
+    const isoDate = `${c.year}-${String(c.month).padStart(2,'0')}-${String(c.day).padStart(2,'0')}`;
+    const { error: insertErr } = await db.from('bookings').insert({
+      line_user_id: lineProfile.userId,
+      class_key: c.classKey,
+      class_template_id: c.templateId,
+      class_title: c.title,
+      class_date: c.date,
+      class_date_iso: isoDate,
+      class_time: c.time,
+      teacher: c.teacher,
+      cap: c.cap,
+      status: 'active',
+      credit_batch_id: batchId
+    });
+    if(insertErr){
+      if(batchId) await refundOneCredit(lineProfile.userId, batchId); // 預約沒成功，把剛剛扣的批次退回去
+      if(insertErr.code === '23505'){
+        // 資料庫的防重複規則擋下來了（極少數手滑連點的情況）
+        showToast('已經預約過這堂課囉');
+      } else {
+        showToast('預約失敗，請稍後再試'); console.error(insertErr);
+      }
+      return;
+    }
+
+    await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineProfile.userId);
+    state.creditsRemaining = newRemaining;
+
+    await Promise.all([loadSeatsMap(), loadMyBookings()]);
     render();
-    if(error){ showToast(rpcErrorMessage(error, '預約失敗，請稍後再試')); console.error(error); return; }
     showToast(`已預約 ${c.date} ${c.time} ${c.title} ✓`);
-  }catch(e){
-    console.error(e); showToast('預約失敗，請稍後再試');
   } finally {
     isProcessingBooking = false;
   }
 }
 
 async function cancelBooking(bookingId){
-  if(isProcessingBooking){ return; } // 防止手滑連點兩下；伺服器端也只會退一次
+  if(isProcessingBooking){ return; } // 防止手滑連點兩下，重複退還堂數
   isProcessingBooking = true;
   try{
     const b = state.myBookings.find(x=>x.id===bookingId);
-    if(!b || b.status !== 'active') return;
-    const { data: cancelled, error } = await db.rpc('cancel_my_booking', { p_booking_id: bookingId });
-    await Promise.all([loadSeatsMap(), loadMyAccount()]);
+    if(!b) return;
+    if(b.status !== 'active'){ return; } // 已經是取消狀態了（例如上一次連點已經處理過），不要重複退還
+
+    const { data: updated, error } = await db.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId).eq('status', 'active').select('id');
+    if(error){ showToast('取消失敗，請稍後再試'); console.error(error); return; }
+    if(!updated || updated.length===0){ return; } // 這筆已經被取消過了（例如另一個分頁或連點造成的重複請求），不要重複退還堂數
+
+    if(b.credit_batch_id){
+      await refundOneCredit(lineProfile.userId, b.credit_batch_id); // 退回原本扣的那一批
+    }
+    const newRemaining = state.creditsRemaining + 1;
+    await db.from('members').update({ remaining_credits: newRemaining }).eq('line_user_id', lineProfile.userId);
+    state.creditsRemaining = newRemaining;
+
+    await Promise.all([loadSeatsMap(), loadMyBookings()]);
     render();
-    if(error){ showToast(rpcErrorMessage(error, '取消失敗，請稍後再試')); console.error(error); return; }
-    if(cancelled) showToast('已取消預約，堂數已退還');
-  }catch(e){
-    console.error(e); showToast('取消失敗，請稍後再試');
+    showToast('已取消預約，堂數已退還');
   } finally {
     isProcessingBooking = false;
   }
@@ -1204,30 +1257,30 @@ function computeFrontFieldOrder(){
 }
 function renderRegistrationFieldHTML(key){
   if(key==='name'){
-    return state.registrationShowName ? `<div class="reg-field"><label>姓名${state.registrationNameRequired ? '<span class="req">*</span>' : ''}</label><input type="text" id="regName" placeholder="請輸入姓名" maxlength="100" value="${esc(state.registrationName)}"></div>` : '';
+    return state.registrationShowName ? `<div class="reg-field"><label>姓名${state.registrationNameRequired ? '<span class="req">*</span>' : ''}</label><input type="text" id="regName" placeholder="請輸入姓名" value="${state.registrationName||''}"></div>` : '';
   }
   if(key==='contact'){
-    return state.registrationShowContact ? `<div class="reg-field"><label>e-mail${state.registrationContactRequired ? '<span class="req">*</span>' : ''}</label><input type="email" id="regContact" placeholder="請輸入 e-mail" maxlength="200" value="${esc(state.registrationContact)}"></div>` : '';
+    return state.registrationShowContact ? `<div class="reg-field"><label>e-mail${state.registrationContactRequired ? '<span class="req">*</span>' : ''}</label><input type="email" id="regContact" placeholder="請輸入 e-mail" value="${state.registrationContact||''}"></div>` : '';
   }
   if(!key.startsWith('q_')) return '';
   const q = state.registrationQuestions.find(x=>x.id===key.slice(2));
   if(!q) return '';
   if(q.type==='note'){
-    return isEditingProfile ? '' : `<div class="reg-note">${esc(q.question)}</div>`;
+    return isEditingProfile ? '' : `<div class="reg-note">${q.question}</div>`;
   }
   const existingAns = state.registrationAnswers ? state.registrationAnswers[q.id] : null;
   return `
   <div class="reg-field">
-    <label>${esc(q.question)}${q.required ? '<span class="req">*</span>' : ''}</label>
+    <label>${q.question}${q.required ? '<span class="req">*</span>' : ''}</label>
     ${q.type==='choice' ? `
       <div class="reg-choice">
-        ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${esc(q.id)}" value="${esc(o)}" ${existingAns===o?'checked':''}>${esc(o)}</label>`).join('')}
+        ${(q.options||[]).map(o=>`<label><input type="radio" name="reg_${q.id}" value="${o}" ${existingAns===o?'checked':''}>${o}</label>`).join('')}
       </div>` : q.type==='multichoice' ? `
       <div class="reg-choice">
-        ${(q.options||[]).map(o=>`<label><input type="checkbox" name="reg_${esc(q.id)}" value="${esc(o)}" ${Array.isArray(existingAns) && existingAns.includes(o) ? 'checked':''}>${esc(o)}</label>`).join('')}
+        ${(q.options||[]).map(o=>`<label><input type="checkbox" name="reg_${q.id}" value="${o}" ${Array.isArray(existingAns) && existingAns.includes(o) ? 'checked':''}>${o}</label>`).join('')}
       </div>` : q.type==='date' ? `
-      <input type="date" id="reg_${esc(q.id)}" value="${esc(existingAns)}">` : `
-      <input type="text" id="reg_${esc(q.id)}" placeholder="請輸入" maxlength="500" value="${esc(existingAns)}">`
+      <input type="date" id="reg_${q.id}" value="${existingAns||''}">` : `
+      <input type="text" id="reg_${q.id}" placeholder="請輸入" value="${existingAns||''}">`
     }
   </div>`;
 }
@@ -1240,15 +1293,15 @@ function renderRegistrationForm(editing){
     ${editing ? `<div class="reg-back"><span onclick="closeRegistrationScreen()">← 返回主畫面（如果有修改資料，記得下方按儲存變更）</span></div>` : ''}
     <div class="reg-header">
       <h2>${editing ? '我的會員資料' : '會員註冊'}</h2>
-      ${editing && state.editProfileNote ? `<p>${esc(state.editProfileNote)}</p>` : ''}
+      ${editing && state.editProfileNote ? `<p>${state.editProfileNote}</p>` : ''}
     </div>
     <div class="reg-body">
       ${computeFrontFieldOrder().map(renderRegistrationFieldHTML).join('')}
       <button class="reg-submit" onclick="submitRegistration()">${editing ? '儲存變更' : '送出'}</button>
     </div>`;
   if(editing){
-    content.oninput = ()=>{ profileDirty = true; };
-    content.onchange = ()=>{ profileDirty = true; };
+    content.addEventListener('input', ()=>{ profileDirty = true; }, { once: false });
+    content.addEventListener('change', ()=>{ profileDirty = true; }, { once: false });
   }
 }
 
@@ -1284,9 +1337,14 @@ async function submitRegistration(){
 
   registrationSubmitting = true;
   try{
-    const { data: submittedAt, error } = await db.rpc('submit_registration', { p_name: name, p_contact: contact, p_answers: answers });
-    if(error){ showToast(rpcErrorMessage(error, '送出失敗，請稍後再試')); console.error(error); return; }
-    const nowIso = submittedAt || new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    const { error } = await db.from('members').update({
+      registration_name: name,
+      registration_contact: contact,
+      registration_answers: answers,
+      registration_submitted_at: nowIso
+    }).eq('line_user_id', lineProfile.userId);
+    if(error){ showToast('送出失敗，請稍後再試'); console.error(error); return; }
 
     state.registrationName = name;
     state.registrationContact = contact;
@@ -1315,7 +1373,6 @@ async function submitRegistration(){
     console.error('LIFF 初始化失敗：', e);
   }
 
-  if(loginRedirecting) return; // 保持載入畫面，等待跳轉到 LINE
   if(isDemoMode){
     document.getElementById('loadingScreen').style.display = 'none';
     const block = document.createElement('div');
@@ -1324,9 +1381,6 @@ async function submitRegistration(){
       <div style="font-size:48px;margin-bottom:16px;">💬</div>
       <div style="font-size:18px;font-weight:700;color:#2d2a26;margin-bottom:8px;">請從 LINE 開啟</div>
       <div style="font-size:14px;color:#8a8578;line-height:1.6;">這個預約系統需要透過 LINE 登入<br>請回到 LINE 聊天室，點擊預約連結開啟</div>
-      ${authErrorMessage ? `<div style="font-size:12px;color:#b0aa9c;margin-top:12px;">${esc(authErrorMessage)}</div>` : ''}
-      <a href="https://liff.line.me/${LIFF_ID}" style="margin-top:18px;display:inline-block;background:#06C755;color:#fff;padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;">用 LINE 開啟</a>
-      <button onclick="location.reload()" style="margin-top:10px;border:none;background:#3f5747;color:#fff;padding:10px 22px;border-radius:10px;font-size:14px;">重新整理</button>
     `;
     document.body.appendChild(block);
     return;
@@ -1336,17 +1390,8 @@ async function submitRegistration(){
     await loadAll();
     render();
   }catch(e){
-    // 以前這裡會照樣顯示 0 堂、空課表，學員以為堂數不見了。現在明確告知並提供重試。
     console.error('初始化過程發生錯誤：', e);
-    document.getElementById('loadingScreen').style.display = 'none';
-    const block = document.createElement('div');
-    block.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:32px;text-align:center;';
-    block.innerHTML = `<div style="font-size:44px;margin-bottom:14px;">⚠️</div>
-      <div style="font-size:17px;font-weight:700;margin-bottom:8px;">資料載入失敗</div>
-      <div style="font-size:14px;color:#8a8578;line-height:1.6;">可能是網路不穩，請稍後再試。你的堂數與預約都不受影響。</div>
-      <button onclick="location.reload()" style="margin-top:18px;border:none;background:#3f5747;color:#fff;padding:10px 22px;border-radius:10px;font-size:14px;">重新載入</button>`;
-    document.body.appendChild(block);
-    return;
+    render();
   }
 
   document.getElementById('loadingScreen').style.display = 'none';
